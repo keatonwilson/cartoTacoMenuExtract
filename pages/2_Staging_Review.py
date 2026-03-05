@@ -1,7 +1,6 @@
 import streamlit as st
-from src.staging import list_extractions, get_extraction, update_extraction, set_status, get_image_url
+from src.staging import list_extractions, get_extraction, update_extraction, set_status
 from src.models import (
-    ExtractedEstablishment,
     SiteData, MenuData, ProteinData, HoursData, SalsaData, DescriptionData,
 )
 
@@ -29,12 +28,8 @@ row = get_extraction(selected_id)
 if row.get("source_image_urls"):
     st.subheader("Source Images")
     img_cols = st.columns(min(len(row["source_image_urls"]), 4))
-    for i, path in enumerate(row["source_image_urls"]):
-        try:
-            signed_url = get_image_url(path)
-            img_cols[i % len(img_cols)].image(signed_url, use_container_width=True)
-        except Exception:
-            img_cols[i % len(img_cols)].warning("Could not load image")
+    for i, url in enumerate(row["source_image_urls"]):
+        img_cols[i % len(img_cols)].image(url, use_container_width=True)
 
 st.divider()
 
@@ -51,30 +46,6 @@ tab_site, tab_menu, tab_protein, tab_hours, tab_salsa, tab_desc = st.tabs(
 )
 
 with tab_site:
-    if st.button("🌐 Enrich from Web"):
-        with st.spinner("Searching the web for business details..."):
-            try:
-                from src.description_gen import enrich_from_web
-
-                result = enrich_from_web(row["restaurant_name"], site.address)
-                if result.address and not site.address:
-                    st.session_state["r_addr"] = result.address
-                if result.phone and not site.phone:
-                    st.session_state["r_phone"] = result.phone
-                if result.website and not site.website:
-                    st.session_state["r_web"] = result.website
-                if result.instagram and not site.instagram:
-                    st.session_state["r_ig"] = result.instagram
-                if result.facebook and not site.facebook:
-                    st.session_state["r_fb"] = result.facebook
-                if result.hours:
-                    for field_name, value in result.hours.items():
-                        if value and not getattr(hours, field_name, ""):
-                            st.session_state[f"rev_hrs_{field_name.replace('_start', '_s').replace('_end', '_e')}"] = value
-                st.success("Enrichment complete! Empty fields have been filled in.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Enrichment failed: {e}")
     c1, c2 = st.columns(2)
     r_name = c1.text_input("Restaurant Name", row["restaurant_name"], key="r_name")
     site_type = c2.selectbox(
@@ -141,12 +112,10 @@ with tab_hours:
     for day, label in zip(days, day_labels):
         c1, c2 = st.columns(2)
         hrs_data[f"{day}_start"] = c1.text_input(
-            f"{label} Open", getattr(hours, f"{day}_start"), key=f"rev_hrs_{day}_s",
-            placeholder="e.g. 10:00 or 10am",
+            f"{label} Open", getattr(hours, f"{day}_start"), key=f"rev_hrs_{day}_s"
         )
         hrs_data[f"{day}_end"] = c2.text_input(
-            f"{label} Close", getattr(hours, f"{day}_end"), key=f"rev_hrs_{day}_e",
-            placeholder="e.g. 10:00 or 10pm",
+            f"{label} Close", getattr(hours, f"{day}_end"), key=f"rev_hrs_{day}_e"
         )
 
 with tab_salsa:
@@ -172,37 +141,6 @@ with tab_salsa:
         )
 
 with tab_desc:
-    if st.button("✨ Generate Descriptions"):
-        with st.spinner("Generating descriptions with Claude..."):
-            try:
-                from src.description_gen import generate_descriptions
-
-                current = ExtractedEstablishment(
-                    restaurant_name=r_name,
-                    site=SiteData(name=r_name, type=site_type, address=address),
-                    menu=MenuData(
-                        **menu_flags, flour_corn=flour_corn,
-                        handmade_tortilla=handmade,
-                        specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
-                    ),
-                    protein=ProteinData(**prot_data),
-                    hours=HoursData(**hrs_data),
-                    salsa=SalsaData(
-                        total_num=total_num if total_num > 0 else None,
-                        **sal_flags, **other_sal,
-                    ),
-                    description=DescriptionData(
-                        short_descrip=desc.short_descrip,
-                        long_descrip=desc.long_descrip,
-                        region=desc.region,
-                    ),
-                )
-                short_gen, long_gen = generate_descriptions(current)
-                st.session_state["rev_sd"] = short_gen
-                st.session_state["rev_ld"] = long_gen
-                st.rerun()
-            except Exception as e:
-                st.error(f"Description generation failed: {e}")
     short_descrip = st.text_area("Short Description", desc.short_descrip, key="rev_sd")
     long_descrip = st.text_area("Long Description", desc.long_descrip, key="rev_ld")
     region = st.text_input("Region", desc.region, key="rev_reg")
