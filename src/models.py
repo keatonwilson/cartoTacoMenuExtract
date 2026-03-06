@@ -1,8 +1,4 @@
-"""Pydantic models mirroring CartoTaco production tables.
-
-_perc fields, heat_overall, and specialty FK fields are excluded from
-extraction (they are editorial/subjective or require manual linking).
-"""
+"""Pydantic models mirroring CartoTaco production tables."""
 
 import re
 
@@ -65,22 +61,39 @@ class SiteData(BaseModel):
 
 class MenuData(BaseModel):
     burro_yes: bool = False
+    burro_perc: float | None = Field(default=None, ge=0, le=1)
     taco_yes: bool = False
+    taco_perc: float | None = Field(default=None, ge=0, le=1)
     torta_yes: bool = False
+    torta_perc: float | None = Field(default=None, ge=0, le=1)
     dog_yes: bool = False
+    dog_perc: float | None = Field(default=None, ge=0, le=1)
     plate_yes: bool = False
+    plate_perc: float | None = Field(default=None, ge=0, le=1)
     cocktail_yes: bool = False
+    cocktail_perc: float | None = Field(default=None, ge=0, le=1)
     gordita_yes: bool = False
+    gordita_perc: float | None = Field(default=None, ge=0, le=1)
     huarache_yes: bool = False
+    huarache_perc: float | None = Field(default=None, ge=0, le=1)
     cemita_yes: bool = False
+    cemita_perc: float | None = Field(default=None, ge=0, le=1)
     flauta_yes: bool = False
+    flauta_perc: float | None = Field(default=None, ge=0, le=1)
     chalupa_yes: bool = False
+    chalupa_perc: float | None = Field(default=None, ge=0, le=1)
     molote_yes: bool = False
+    molote_perc: float | None = Field(default=None, ge=0, le=1)
     tostada_yes: bool = False
+    tostada_perc: float | None = Field(default=None, ge=0, le=1)
     enchilada_yes: bool = False
+    enchilada_perc: float | None = Field(default=None, ge=0, le=1)
     tamale_yes: bool = False
+    tamale_perc: float | None = Field(default=None, ge=0, le=1)
     sope_yes: bool = False
+    sope_perc: float | None = Field(default=None, ge=0, le=1)
     caldo_yes: bool = False
+    caldo_perc: float | None = Field(default=None, ge=0, le=1)
     flour_corn: str = Field(default="", description="'Flour', 'Corn', or 'Both'")
     handmade_tortilla: bool = False
     specialty_items: list[str] = Field(
@@ -91,10 +104,15 @@ class MenuData(BaseModel):
 
 class ProteinData(BaseModel):
     chicken_yes: bool = False
+    chicken_perc: float | None = Field(default=None, ge=0, le=1)
     beef_yes: bool = False
+    beef_perc: float | None = Field(default=None, ge=0, le=1)
     pork_yes: bool = False
+    pork_perc: float | None = Field(default=None, ge=0, le=1)
     fish_yes: bool = False
+    fish_perc: float | None = Field(default=None, ge=0, le=1)
     veg_yes: bool = False
+    veg_perc: float | None = Field(default=None, ge=0, le=1)
     chicken_style_1: str = ""
     chicken_style_2: str = ""
     chicken_style_3: str = ""

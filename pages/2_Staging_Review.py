@@ -93,6 +93,7 @@ with tab_site:
 
 with tab_menu:
     menu_flags = {}
+    menu_percs = {}
     items = [
         "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
         "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
@@ -100,10 +101,18 @@ with tab_menu:
     ]
     cols = st.columns(4)
     for i, item in enumerate(items):
-        key = f"{item}_yes"
-        menu_flags[key] = cols[i % 4].checkbox(
-            item.capitalize(), getattr(menu, key), key=f"rev_menu_{key}"
+        col = cols[i % 4]
+        yes_key = f"{item}_yes"
+        perc_key = f"{item}_perc"
+        menu_flags[yes_key] = col.checkbox(
+            item.capitalize(), getattr(menu, yes_key), key=f"rev_menu_{yes_key}"
         )
+        menu_percs[perc_key] = col.number_input(
+            f"{item.capitalize()} prop", min_value=0.0, max_value=1.0,
+            value=float(getattr(menu, perc_key) or 0.0),
+            step=0.05, format="%.2f",
+            key=f"rev_menu_{perc_key}",
+        ) or None
     c1, c2 = st.columns(2)
     flour_corn = c1.selectbox(
         "Tortilla Type", ["", "Flour", "Corn", "Both"],
@@ -120,9 +129,16 @@ with tab_protein:
     prot_data = {}
     for prot in ["chicken", "beef", "pork", "fish", "veg"]:
         st.markdown(f"**{prot.capitalize()}**")
-        prot_data[f"{prot}_yes"] = st.checkbox(
+        c_yes, c_perc = st.columns([2, 1])
+        prot_data[f"{prot}_yes"] = c_yes.checkbox(
             f"Serves {prot}", getattr(protein, f"{prot}_yes"), key=f"rev_prot_{prot}"
         )
+        prot_data[f"{prot}_perc"] = c_perc.number_input(
+            f"{prot.capitalize()} prop", min_value=0.0, max_value=1.0,
+            value=float(getattr(protein, f"{prot}_perc") or 0.0),
+            step=0.05, format="%.2f",
+            key=f"rev_prot_{prot}_perc",
+        ) or None
         c1, c2, c3 = st.columns(3)
         prot_data[f"{prot}_style_1"] = c1.text_input(
             "Style 1", getattr(protein, f"{prot}_style_1"), key=f"rev_prot_{prot}_s1"
@@ -181,7 +197,7 @@ with tab_desc:
                     restaurant_name=r_name,
                     site=SiteData(name=r_name, type=site_type, address=address),
                     menu=MenuData(
-                        **menu_flags, flour_corn=flour_corn,
+                        **menu_flags, **menu_percs, flour_corn=flour_corn,
                         handmade_tortilla=handmade,
                         specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                     ),
@@ -221,7 +237,7 @@ if col1.button("💾 Save Changes"):
             website=website, instagram=instagram, facebook=facebook, contact=contact,
         ).model_dump(),
         "menu_data": MenuData(
-            **menu_flags, flour_corn=flour_corn, handmade_tortilla=handmade,
+            **menu_flags, **menu_percs, flour_corn=flour_corn, handmade_tortilla=handmade,
             specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
         ).model_dump(),
         "protein_data": ProteinData(**prot_data).model_dump(),
