@@ -56,8 +56,26 @@ def set_status(row_id: str, status: str) -> dict:
 
 
 def upload_image(file_bytes: bytes, filename: str) -> str:
-    """Upload an image to Supabase Storage and return its public URL."""
+    """Upload an image to Supabase Storage and return its storage path.
+
+    Returns the storage path (not a public URL) since the bucket may be private.
+    Use get_image_url() to generate a signed URL for display.
+    """
     client = get_client()
     path = f"{uuid.uuid4().hex}_{filename}"
     client.storage.from_("menu-photos").upload(path, file_bytes, {"content-type": "image/jpeg"})
-    return client.storage.from_("menu-photos").get_public_url(path)
+    return path
+
+
+def get_image_url(path: str) -> str:
+    """Get a signed URL for a stored image (valid for 1 hour).
+
+    Handles both legacy full public URLs and new storage paths.
+    """
+    client = get_client()
+    # Legacy: if path is already a full URL, extract just the storage path
+    marker = "/menu-photos/"
+    if marker in path:
+        path = path.split(marker, 1)[1]
+    resp = client.storage.from_("menu-photos").create_signed_url(path, 3600)
+    return resp["signedURL"]

@@ -1,6 +1,7 @@
 """Tests for Pydantic models."""
 
 import json
+import pytest
 from src.models import (
     ExtractedEstablishment,
     SiteData,
@@ -9,6 +10,7 @@ from src.models import (
     HoursData,
     SalsaData,
     DescriptionData,
+    normalize_time,
 )
 
 
@@ -85,3 +87,54 @@ def test_partial_data_validation():
     assert ext.menu.burro_yes is False
     assert ext.protein.beef_style_1 == "carne asada"
     assert ext.hours.mon_start == ""
+
+
+# --- Time normalization tests ---
+
+
+class TestNormalizeTime:
+    def test_am_with_space(self):
+        assert normalize_time("10 am") == "10:00"
+
+    def test_pm_no_space(self):
+        assert normalize_time("10pm") == "22:00"
+
+    def test_am_with_minutes(self):
+        assert normalize_time("8:30 AM") == "08:30"
+
+    def test_pm_with_minutes(self):
+        assert normalize_time("3:30 pm") == "15:30"
+
+    def test_already_valid_24h(self):
+        assert normalize_time("22:00") == "22:00"
+
+    def test_already_valid_single_digit(self):
+        assert normalize_time("8:00") == "08:00"
+
+    def test_empty_string(self):
+        assert normalize_time("") == ""
+
+    def test_whitespace_only(self):
+        assert normalize_time("   ") == ""
+
+    def test_midnight_12am(self):
+        assert normalize_time("12am") == "00:00"
+
+    def test_noon_12pm(self):
+        assert normalize_time("12pm") == "12:00"
+
+    def test_invalid_raises(self):
+        with pytest.raises(ValueError):
+            normalize_time("not a time")
+
+    def test_hours_model_normalizes(self):
+        """HoursData auto-normalizes on construction."""
+        h = HoursData(mon_start="10 am", mon_end="10pm")
+        assert h.mon_start == "10:00"
+        assert h.mon_end == "22:00"
+
+    def test_hours_model_passthrough(self):
+        """Already-valid times pass through unchanged."""
+        h = HoursData(mon_start="08:30", mon_end="22:00")
+        assert h.mon_start == "08:30"
+        assert h.mon_end == "22:00"

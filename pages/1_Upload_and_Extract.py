@@ -51,6 +51,31 @@ if "extraction" in st.session_state:
 
     # --- Site Info ---
     with tab_site:
+        if st.button("🌐 Enrich from Web"):
+            with st.spinner("Searching the web for business details..."):
+                try:
+                    from src.description_gen import enrich_from_web
+
+                    result = enrich_from_web(ext.restaurant_name, ext.site.address)
+                    if result.address and not ext.site.address:
+                        ext.site.address = result.address
+                    if result.phone and not ext.site.phone:
+                        ext.site.phone = result.phone
+                    if result.website and not ext.site.website:
+                        ext.site.website = result.website
+                    if result.instagram and not ext.site.instagram:
+                        ext.site.instagram = result.instagram
+                    if result.facebook and not ext.site.facebook:
+                        ext.site.facebook = result.facebook
+                    if result.hours:
+                        for field_name, value in result.hours.items():
+                            if value and not getattr(ext.hours, field_name, ""):
+                                setattr(ext.hours, field_name, value)
+                    st.session_state["extraction"] = ext
+                    st.success("Enrichment complete! Empty fields have been filled in.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Enrichment failed: {e}")
         c1, c2 = st.columns(2)
         name = c1.text_input("Restaurant Name", ext.restaurant_name)
         site_type = c2.selectbox(
@@ -124,10 +149,12 @@ if "extraction" in st.session_state:
         for day, label in zip(days, day_labels):
             c1, c2 = st.columns(2)
             hours_data[f"{day}_start"] = c1.text_input(
-                f"{label} Open", getattr(ext.hours, f"{day}_start"), key=f"hrs_{day}_s"
+                f"{label} Open", getattr(ext.hours, f"{day}_start"), key=f"hrs_{day}_s",
+                placeholder="e.g. 10:00 or 10am",
             )
             hours_data[f"{day}_end"] = c2.text_input(
-                f"{label} Close", getattr(ext.hours, f"{day}_end"), key=f"hrs_{day}_e"
+                f"{label} Close", getattr(ext.hours, f"{day}_end"), key=f"hrs_{day}_e",
+                placeholder="e.g. 10:00 or 10pm",
             )
 
     # --- Salsas ---
@@ -156,6 +183,39 @@ if "extraction" in st.session_state:
 
     # --- Description ---
     with tab_desc:
+        if st.button("✨ Generate Descriptions"):
+            with st.spinner("Generating descriptions with Claude..."):
+                try:
+                    from src.description_gen import generate_descriptions
+
+                    # Build current state into an ExtractedEstablishment
+                    current = ExtractedEstablishment(
+                        restaurant_name=name,
+                        site=SiteData(name=name, type=site_type, address=address),
+                        menu=MenuData(
+                            **menu_flags, flour_corn=flour_corn,
+                            handmade_tortilla=handmade,
+                            specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
+                        ),
+                        protein=ProteinData(**protein_data),
+                        hours=HoursData(**hours_data),
+                        salsa=SalsaData(
+                            total_num=total_num if total_num > 0 else None,
+                            **salsa_flags, **other_salsa,
+                        ),
+                        description=DescriptionData(
+                            short_descrip=ext.description.short_descrip,
+                            long_descrip=ext.description.long_descrip,
+                            region=ext.description.region,
+                        ),
+                    )
+                    short_gen, long_gen = generate_descriptions(current)
+                    ext.description.short_descrip = short_gen
+                    ext.description.long_descrip = long_gen
+                    st.session_state["extraction"] = ext
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Description generation failed: {e}")
         short_descrip = st.text_area("Short Description", ext.description.short_descrip)
         long_descrip = st.text_area("Long Description", ext.description.long_descrip)
         region = st.text_input("Region", ext.description.region)

@@ -4,7 +4,46 @@ _perc fields, heat_overall, and specialty FK fields are excluded from
 extraction (they are editorial/subjective or require manual linking).
 """
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+
+def normalize_time(value: str) -> str:
+    """Normalize free-text time input to HH:MM 24-hour format.
+
+    Handles: "10 am", "10am", "10:00 AM", "8:30pm", "22:00", etc.
+    Returns empty string for empty input.
+    Raises ValueError for unparseable input.
+    """
+    if not value or not value.strip():
+        return ""
+
+    text = value.strip().lower()
+
+    # Already valid HH:MM 24-hour format
+    if re.match(r"^([01]?\d|2[0-3]):[0-5]\d$", text):
+        h, m = text.split(":")
+        return f"{int(h):02d}:{m}"
+
+    # Parse optional hours:minutes with am/pm
+    m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$", text)
+    if m:
+        hour = int(m.group(1))
+        minute = m.group(2) or "00"
+        period = m.group(3)
+
+        if hour < 1 or hour > 12:
+            raise ValueError(f"Invalid hour in time: {value}")
+
+        if period == "am":
+            hour = 0 if hour == 12 else hour
+        else:  # pm
+            hour = hour if hour == 12 else hour + 12
+
+        return f"{hour:02d}:{minute}"
+
+    raise ValueError(f"Cannot parse time: {value}")
 
 
 class SiteData(BaseModel):
@@ -88,6 +127,13 @@ class HoursData(BaseModel):
     sat_end: str = ""
     sun_start: str = ""
     sun_end: str = ""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _normalize_times(cls, v: object) -> object:
+        if isinstance(v, str):
+            return normalize_time(v)
+        return v
 
 
 class SalsaData(BaseModel):
