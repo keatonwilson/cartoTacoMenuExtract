@@ -90,6 +90,23 @@ with tab_site:
     instagram = c3.text_input("Instagram", site.instagram, key="r_ig")
     facebook = st.text_input("Facebook", site.facebook, key="r_fb")
     contact = st.text_input("Contact", site.contact, key="r_contact")
+    c1, c2 = st.columns(2)
+    lat_1 = c1.number_input("Latitude", value=site.lat_1 or 0.0, format="%.6f", key="r_lat")
+    lon_1 = c2.number_input("Longitude", value=site.lon_1 or 0.0, format="%.6f", key="r_lon")
+    if st.button("📍 Geocode from Address"):
+        if address:
+            with st.spinner("Geocoding..."):
+                from src.description_gen import geocode_address
+                coords = geocode_address(address)
+                if coords:
+                    st.session_state["r_lat"] = coords[0]
+                    st.session_state["r_lon"] = coords[1]
+                    st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
+                    st.rerun()
+                else:
+                    st.warning("Could not geocode address.")
+        else:
+            st.warning("Enter an address first.")
 
 with tab_menu:
     menu_flags = {}
@@ -195,7 +212,8 @@ with tab_desc:
 
                 current = ExtractedEstablishment(
                     restaurant_name=r_name,
-                    site=SiteData(name=r_name, type=site_type, address=address),
+                    site=SiteData(name=r_name, type=site_type, address=address,
+                        lat_1=lat_1 or None, lon_1=lon_1 or None),
                     menu=MenuData(
                         **menu_flags, **menu_percs, flour_corn=flour_corn,
                         handmade_tortilla=handmade,
@@ -235,6 +253,7 @@ if col1.button("💾 Save Changes"):
         "site_data": SiteData(
             name=r_name, type=site_type, address=address, phone=phone,
             website=website, instagram=instagram, facebook=facebook, contact=contact,
+            lat_1=lat_1 or None, lon_1=lon_1 or None,
         ).model_dump(),
         "menu_data": MenuData(
             **menu_flags, **menu_percs, flour_corn=flour_corn, handmade_tortilla=handmade,

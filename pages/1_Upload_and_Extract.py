@@ -92,6 +92,24 @@ if "extraction" in st.session_state:
         instagram = c3.text_input("Instagram", ext.site.instagram)
         facebook = st.text_input("Facebook", ext.site.facebook)
         contact = st.text_input("Contact", ext.site.contact)
+        c1, c2 = st.columns(2)
+        lat_1 = c1.number_input("Latitude", value=ext.site.lat_1 or 0.0, format="%.6f", key="lat_1")
+        lon_1 = c2.number_input("Longitude", value=ext.site.lon_1 or 0.0, format="%.6f", key="lon_1")
+        if st.button("📍 Geocode from Address"):
+            if address:
+                with st.spinner("Geocoding..."):
+                    from src.description_gen import geocode_address
+                    coords = geocode_address(address)
+                    if coords:
+                        ext.site.lat_1 = coords[0]
+                        ext.site.lon_1 = coords[1]
+                        st.session_state["extraction"] = ext
+                        st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
+                        st.rerun()
+                    else:
+                        st.warning("Could not geocode address.")
+            else:
+                st.warning("Enter an address first.")
 
     # --- Menu Items ---
     with tab_menu:
@@ -207,7 +225,8 @@ if "extraction" in st.session_state:
                     # Build current state into an ExtractedEstablishment
                     current = ExtractedEstablishment(
                         restaurant_name=name,
-                        site=SiteData(name=name, type=site_type, address=address),
+                        site=SiteData(name=name, type=site_type, address=address,
+                            lat_1=lat_1 or None, lon_1=lon_1 or None),
                         menu=MenuData(
                             **menu_flags, **menu_percs, flour_corn=flour_corn,
                             handmade_tortilla=handmade,
@@ -249,7 +268,7 @@ if "extraction" in st.session_state:
                     site=SiteData(
                         name=name, type=site_type, address=address, phone=phone,
                         website=website, instagram=instagram, facebook=facebook,
-                        contact=contact,
+                        contact=contact, lat_1=lat_1 or None, lon_1=lon_1 or None,
                     ),
                     menu=MenuData(
                         **menu_flags, **menu_percs,

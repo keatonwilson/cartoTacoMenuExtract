@@ -319,6 +319,34 @@ def enrich_from_web(restaurant_name: str, current_address: str = "") -> Enrichme
     return result
 
 
+# --- Geocoding ---
+
+def geocode_address(address: str) -> tuple[float, float] | None:
+    """Geocode an address to (lat, lon) using OpenStreetMap Nominatim.
+
+    Returns (lat, lon) tuple or None if not found.
+    """
+    import urllib.request
+    import urllib.parse
+
+    query = urllib.parse.urlencode({
+        "q": address,
+        "format": "json",
+        "limit": 1,
+    })
+    url = f"https://nominatim.openstreetmap.org/search?{query}"
+    req = urllib.request.Request(url, headers={"User-Agent": "CartoTacoMenuExtract/1.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None
+
+
 # --- Spec Table Descriptions ---
 
 SPEC_DESCRIPTION_SYSTEM_PROMPT = """\
