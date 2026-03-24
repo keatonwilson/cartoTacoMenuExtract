@@ -90,9 +90,27 @@ with tab_site:
     instagram = c3.text_input("Instagram", site.instagram, key="r_ig")
     facebook = st.text_input("Facebook", site.facebook, key="r_fb")
     contact = st.text_input("Contact", site.contact, key="r_contact")
+    c1, c2 = st.columns(2)
+    lat_1 = c1.number_input("Latitude", value=site.lat_1 or 0.0, format="%.6f", key="r_lat")
+    lon_1 = c2.number_input("Longitude", value=site.lon_1 or 0.0, format="%.6f", key="r_lon")
+    if st.button("📍 Geocode from Address"):
+        if address:
+            with st.spinner("Geocoding..."):
+                from src.description_gen import geocode_address
+                coords = geocode_address(address)
+                if coords:
+                    st.session_state["r_lat"] = coords[0]
+                    st.session_state["r_lon"] = coords[1]
+                    st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
+                    st.rerun()
+                else:
+                    st.warning("Could not geocode address.")
+        else:
+            st.warning("Enter an address first.")
 
 with tab_menu:
     menu_flags = {}
+    menu_percs = {}
     items = [
         "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
         "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
@@ -100,10 +118,18 @@ with tab_menu:
     ]
     cols = st.columns(4)
     for i, item in enumerate(items):
-        key = f"{item}_yes"
-        menu_flags[key] = cols[i % 4].checkbox(
-            item.capitalize(), getattr(menu, key), key=f"rev_menu_{key}"
+        col = cols[i % 4]
+        yes_key = f"{item}_yes"
+        perc_key = f"{item}_perc"
+        menu_flags[yes_key] = col.checkbox(
+            item.capitalize(), getattr(menu, yes_key), key=f"rev_menu_{yes_key}"
         )
+        menu_percs[perc_key] = col.number_input(
+            f"{item.capitalize()} prop", min_value=0.0, max_value=1.0,
+            value=float(getattr(menu, perc_key) or 0.0),
+            step=0.05, format="%.2f",
+            key=f"rev_menu_{perc_key}",
+        ) or None
     c1, c2 = st.columns(2)
     flour_corn = c1.selectbox(
         "Tortilla Type", ["", "Flour", "Corn", "Both"],
@@ -120,9 +146,16 @@ with tab_protein:
     prot_data = {}
     for prot in ["chicken", "beef", "pork", "fish", "veg"]:
         st.markdown(f"**{prot.capitalize()}**")
-        prot_data[f"{prot}_yes"] = st.checkbox(
+        c_yes, c_perc = st.columns([2, 1])
+        prot_data[f"{prot}_yes"] = c_yes.checkbox(
             f"Serves {prot}", getattr(protein, f"{prot}_yes"), key=f"rev_prot_{prot}"
         )
+        prot_data[f"{prot}_perc"] = c_perc.number_input(
+            f"{prot.capitalize()} prop", min_value=0.0, max_value=1.0,
+            value=float(getattr(protein, f"{prot}_perc") or 0.0),
+            step=0.05, format="%.2f",
+            key=f"rev_prot_{prot}_perc",
+        ) or None
         c1, c2, c3 = st.columns(3)
         prot_data[f"{prot}_style_1"] = c1.text_input(
             "Style 1", getattr(protein, f"{prot}_style_1"), key=f"rev_prot_{prot}_s1"
@@ -179,9 +212,10 @@ with tab_desc:
 
                 current = ExtractedEstablishment(
                     restaurant_name=r_name,
-                    site=SiteData(name=r_name, type=site_type, address=address),
+                    site=SiteData(name=r_name, type=site_type, address=address,
+                        lat_1=lat_1 or None, lon_1=lon_1 or None),
                     menu=MenuData(
-                        **menu_flags, flour_corn=flour_corn,
+                        **menu_flags, **menu_percs, flour_corn=flour_corn,
                         handmade_tortilla=handmade,
                         specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                     ),
@@ -219,9 +253,10 @@ if col1.button("💾 Save Changes"):
         "site_data": SiteData(
             name=r_name, type=site_type, address=address, phone=phone,
             website=website, instagram=instagram, facebook=facebook, contact=contact,
+            lat_1=lat_1 or None, lon_1=lon_1 or None,
         ).model_dump(),
         "menu_data": MenuData(
-            **menu_flags, flour_corn=flour_corn, handmade_tortilla=handmade,
+            **menu_flags, **menu_percs, flour_corn=flour_corn, handmade_tortilla=handmade,
             specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
         ).model_dump(),
         "protein_data": ProteinData(**prot_data).model_dump(),

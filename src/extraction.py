@@ -28,6 +28,14 @@ For tortilla type, use "Flour", "Corn", or "Both".
 
 For site type, use "Brick and Mortar", "Stand", or "Truck" if you can determine it.
 
+For each menu item type and protein category that is present (_yes = true), estimate a
+_perc value as a proportion (0.0 to 1.0) representing how prominent that item is on the
+menu relative to other items. Base this on the number of variations/dishes featuring
+that item. The _perc values for menu items should sum to 1.0, and the _perc values for
+proteins should separately sum to 1.0. For example, if tacos dominate the menu,
+taco_perc might be 0.5-0.7, while a minor item might be 0.05. Leave _perc as null if
+the item is not present (_yes = false).
+
 Return ONLY valid JSON matching this schema (no markdown, no explanation):
 
 """

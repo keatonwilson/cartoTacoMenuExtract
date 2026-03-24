@@ -317,3 +317,127 @@ def enrich_from_web(restaurant_name: str, current_address: str = "") -> Enrichme
         result.hours = cleaned
 
     return result
+
+
+# --- Geocoding ---
+
+def geocode_address(address: str) -> tuple[float, float] | None:
+    """Geocode an address to (lat, lon) using OpenStreetMap Nominatim.
+
+    Returns (lat, lon) tuple or None if not found.
+    """
+    import urllib.request
+    import urllib.parse
+
+    query = urllib.parse.urlencode({
+        "q": address,
+        "format": "json",
+        "limit": 1,
+    })
+    url = f"https://nominatim.openstreetmap.org/search?{query}"
+    req = urllib.request.Request(url, headers={"User-Agent": "CartoTacoMenuExtract/1.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None
+
+
+# --- Spec Table Descriptions ---
+
+SPEC_DESCRIPTION_SYSTEM_PROMPT = """\
+You are a food writer for CartoTaco, a guide to Mexican food in Tucson, AZ.
+Your voice is knowledgeable, approachable, and food-centric.
+
+You have access to a web search tool. Search for information about the dish or protein
+to understand its origins, preparation methods, regional variations, and cultural significance.
+
+Write two descriptions:
+
+**Short description** (10–150 characters):
+- Punchy one-liner capturing what this item/protein is
+- Lead with the most distinctive or defining characteristic
+
+**Long description** (up to 500 characters):
+- More detail about preparation, regional origins, and what makes it distinctive
+- Weave in cultural context and what to expect when ordering
+- Reference Sonoran/Tucson context when relevant
+
+Return ONLY a JSON object with two keys: "short" and "long". \
+No markdown fences, no explanation — just the JSON.
+"""
+
+
+def _fetch_example_spec_descriptions(spec_type: str) -> str:
+    """Fetch existing spec descriptions as style examples."""
+    try:
+        from supabase import create_client
+
+        client = create_client(get_supabase_url(), get_supabase_key())
+        table = "item_spec" if spec_type == "item" else "protein_spec"
+        resp = (
+            client.table(table)
+            .select("short_descrip, long_descrip")
+            .not_.is_("short_descrip", "null")
+            .not_.is_("long_descrip", "null")
+            .limit(5)
+            .execute()
+        )
+        if not resp.data:
+            return ""
+
+        examples = []
+        for row in resp.data:
+            short = row.get("short_descrip", "")
+            long_ = row.get("long_descrip", "")
+            if short or long_:
+                examples.append(f"Short: {short}\nLong: {long_}")
+        if examples:
+            return "\n\nHere are examples of existing descriptions for style reference:\n\n" + "\n---\n".join(examples)
+    except Exception:
+        pass
+    return ""
+
+
+def generate_spec_descriptions(name: str, origin: str, spec_type: str) -> tuple[str, str]:
+    """Generate short and long descriptions for a spec table entry.
+
+    Args:
+        name: Name of the item or protein (e.g. "Birria", "Gordita")
+        origin: Origin/region info if available
+        spec_type: "item" or "protein"
+
+    Returns:
+        (short_description, long_description)
+    """
+    examples = _fetch_example_spec_descriptions(spec_type)
+    type_label = "dish/menu item" if spec_type == "item" else "protein/meat preparation"
+
+    user_message = (
+        f"Write descriptions for this {type_label}:\n\n"
+        f"Name: {name}\n"
+    )
+    if origin:
+        user_message += f"Origin/Region: {origin}\n"
+    user_message += (
+        f"{examples}\n\n"
+        f"Search the web for information about \"{name}\" in the context of Mexican food. "
+        f"Then write the short and long descriptions."
+    )
+
+    client = anthropic.Anthropic(api_key=get_anthropic_key())
+    response = client.messages.create(
+        model=EXTRACTION_MODEL,
+        max_tokens=4096,
+        system=SPEC_DESCRIPTION_SYSTEM_PROMPT,
+        tools=_web_search_tools(),
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    raw_text = _extract_text_from_response(response)
+    result = _extract_json(raw_text)
+    return _strip_citation_tags(result["short"]), _strip_citation_tags(result["long"])

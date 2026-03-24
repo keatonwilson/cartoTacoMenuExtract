@@ -92,11 +92,30 @@ if "extraction" in st.session_state:
         instagram = c3.text_input("Instagram", ext.site.instagram)
         facebook = st.text_input("Facebook", ext.site.facebook)
         contact = st.text_input("Contact", ext.site.contact)
+        c1, c2 = st.columns(2)
+        lat_1 = c1.number_input("Latitude", value=ext.site.lat_1 or 0.0, format="%.6f", key="lat_1")
+        lon_1 = c2.number_input("Longitude", value=ext.site.lon_1 or 0.0, format="%.6f", key="lon_1")
+        if st.button("📍 Geocode from Address"):
+            if address:
+                with st.spinner("Geocoding..."):
+                    from src.description_gen import geocode_address
+                    coords = geocode_address(address)
+                    if coords:
+                        ext.site.lat_1 = coords[0]
+                        ext.site.lon_1 = coords[1]
+                        st.session_state["extraction"] = ext
+                        st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
+                        st.rerun()
+                    else:
+                        st.warning("Could not geocode address.")
+            else:
+                st.warning("Enter an address first.")
 
     # --- Menu Items ---
     with tab_menu:
         st.markdown("**Items served:**")
         menu_flags = {}
+        menu_percs = {}
         items = [
             "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
             "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
@@ -104,10 +123,18 @@ if "extraction" in st.session_state:
         ]
         cols = st.columns(4)
         for i, item in enumerate(items):
-            key = f"{item}_yes"
-            menu_flags[key] = cols[i % 4].checkbox(
-                item.capitalize(), getattr(ext.menu, key), key=f"menu_{key}"
+            col = cols[i % 4]
+            yes_key = f"{item}_yes"
+            perc_key = f"{item}_perc"
+            menu_flags[yes_key] = col.checkbox(
+                item.capitalize(), getattr(ext.menu, yes_key), key=f"menu_{yes_key}"
             )
+            menu_percs[perc_key] = col.number_input(
+                f"{item.capitalize()} prop", min_value=0.0, max_value=1.0,
+                value=float(getattr(ext.menu, perc_key) or 0.0),
+                step=0.05, format="%.2f",
+                key=f"menu_{perc_key}",
+            ) or None
         c1, c2 = st.columns(2)
         flour_corn = c1.selectbox(
             "Tortilla Type",
@@ -127,9 +154,16 @@ if "extraction" in st.session_state:
         protein_data = {}
         for prot in ["chicken", "beef", "pork", "fish", "veg"]:
             st.markdown(f"**{prot.capitalize()}**")
-            protein_data[f"{prot}_yes"] = st.checkbox(
+            c_yes, c_perc = st.columns([2, 1])
+            protein_data[f"{prot}_yes"] = c_yes.checkbox(
                 f"Serves {prot}", getattr(ext.protein, f"{prot}_yes"), key=f"prot_{prot}"
             )
+            protein_data[f"{prot}_perc"] = c_perc.number_input(
+                f"{prot.capitalize()} prop", min_value=0.0, max_value=1.0,
+                value=float(getattr(ext.protein, f"{prot}_perc") or 0.0),
+                step=0.05, format="%.2f",
+                key=f"prot_{prot}_perc",
+            ) or None
             c1, c2, c3 = st.columns(3)
             protein_data[f"{prot}_style_1"] = c1.text_input(
                 "Style 1", getattr(ext.protein, f"{prot}_style_1"), key=f"prot_{prot}_s1"
@@ -191,9 +225,10 @@ if "extraction" in st.session_state:
                     # Build current state into an ExtractedEstablishment
                     current = ExtractedEstablishment(
                         restaurant_name=name,
-                        site=SiteData(name=name, type=site_type, address=address),
+                        site=SiteData(name=name, type=site_type, address=address,
+                            lat_1=lat_1 or None, lon_1=lon_1 or None),
                         menu=MenuData(
-                            **menu_flags, flour_corn=flour_corn,
+                            **menu_flags, **menu_percs, flour_corn=flour_corn,
                             handmade_tortilla=handmade,
                             specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                         ),
@@ -233,10 +268,10 @@ if "extraction" in st.session_state:
                     site=SiteData(
                         name=name, type=site_type, address=address, phone=phone,
                         website=website, instagram=instagram, facebook=facebook,
-                        contact=contact,
+                        contact=contact, lat_1=lat_1 or None, lon_1=lon_1 or None,
                     ),
                     menu=MenuData(
-                        **menu_flags,
+                        **menu_flags, **menu_percs,
                         flour_corn=flour_corn,
                         handmade_tortilla=handmade,
                         specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],

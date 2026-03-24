@@ -138,3 +138,52 @@ class TestNormalizeTime:
         h = HoursData(mon_start="08:30", mon_end="22:00")
         assert h.mon_start == "08:30"
         assert h.mon_end == "22:00"
+
+
+# --- Percentage field tests ---
+
+
+class TestPercFields:
+    def test_menu_perc_defaults_to_none(self):
+        m = MenuData()
+        assert m.taco_perc is None
+        assert m.burro_perc is None
+
+    def test_menu_perc_valid_values(self):
+        m = MenuData(taco_perc=0.5, burro_perc=0.3)
+        assert m.taco_perc == 0.5
+        assert m.burro_perc == 0.3
+
+    def test_menu_perc_boundary_values(self):
+        m = MenuData(taco_perc=0.0, burro_perc=1.0)
+        assert m.taco_perc == 0.0
+        assert m.burro_perc == 1.0
+
+    def test_menu_perc_rejects_over_1(self):
+        with pytest.raises(Exception):
+            MenuData(taco_perc=1.5)
+
+    def test_menu_perc_rejects_negative(self):
+        with pytest.raises(Exception):
+            MenuData(taco_perc=-0.1)
+
+    def test_protein_perc_defaults_to_none(self):
+        p = ProteinData()
+        assert p.chicken_perc is None
+        assert p.beef_perc is None
+
+    def test_protein_perc_valid_values(self):
+        p = ProteinData(chicken_perc=0.4, beef_perc=0.6)
+        assert p.chicken_perc == 0.4
+        assert p.beef_perc == 0.6
+
+    def test_protein_perc_rejects_over_1(self):
+        with pytest.raises(Exception):
+            ProteinData(beef_perc=2.0)
+
+    def test_existing_rows_without_perc_fields(self):
+        """Existing staging data without _perc fields should load fine."""
+        data = {"taco_yes": True, "burro_yes": False}
+        m = MenuData.model_validate(data)
+        assert m.taco_yes is True
+        assert m.taco_perc is None

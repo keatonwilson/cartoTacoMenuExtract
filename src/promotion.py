@@ -46,25 +46,46 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     }
 
     if est_id is None:
-        result = client.table("sites").insert(site_row).execute()
-        est_id = result.data[0]["est_id"]
-    else:
-        site_row["est_id"] = est_id
-        client.table("sites").upsert(site_row, on_conflict="est_id").execute()
+        # est_id is not auto-generated; find the next available value
+        max_row = client.table("sites").select("est_id").order("est_id", desc=True).limit(1).execute().data
+        est_id = (max_row[0]["est_id"] + 1) if max_row else 1
+    site_row["est_id"] = est_id
+    client.table("sites").upsert(site_row, on_conflict="est_id").execute()
 
     # --- Menu ---
+    MENU_DB_COLUMNS = {
+        "burro_yes", "taco_yes", "torta_yes", "dog_yes", "plate_yes", "cocktail_yes",
+        "gordita_yes", "huarache_yes", "cemita_yes", "flauta_yes", "chalupa_yes",
+        "molote_yes", "tostada_yes", "enchilada_yes", "tamale_yes", "sope_yes", "caldo_yes",
+        "burro_perc", "taco_perc", "torta_perc", "dog_perc", "plate_perc", "cocktail_perc",
+        "gordita_perc", "huarache_perc", "cemita_perc", "flauta_perc", "chalupa_perc",
+        "molote_perc", "tostada_perc", "enchilada_perc", "tamale_perc", "sope_perc", "caldo_perc",
+        "flour_corn", "handmade_tortilla",
+    }
     menu_row = {"est_id": est_id}
-    # Copy boolean and text fields, skip specialty_items (text list, needs manual FK)
     for key, val in menu_data.items():
-        if key == "specialty_items":
-            continue
-        menu_row[key] = val
+        if key in MENU_DB_COLUMNS:
+            menu_row[key] = val
+    # Map specialty_items list to specialty_item_1..4 columns
+    specialty = menu_data.get("specialty_items", [])
+    for i in range(1, 5):
+        menu_row[f"specialty_item_{i}"] = specialty[i - 1] if i <= len(specialty) else None
     client.table("menu").upsert(menu_row, on_conflict="est_id").execute()
 
     # --- Protein ---
+    PROTEIN_DB_COLUMNS = {
+        "chicken_yes", "beef_yes", "pork_yes", "fish_yes", "veg_yes",
+        "chicken_perc", "beef_perc", "pork_perc", "fish_perc", "veg_perc",
+        "chicken_style_1", "chicken_style_2", "chicken_style_3",
+        "beef_style_1", "beef_style_2", "beef_style_3",
+        "pork_style_1", "pork_style_2", "pork_style_3",
+        "fish_style_1", "fish_style_2", "fish_style_3",
+        "veg_style_1", "veg_style_2", "veg_style_3",
+    }
     prot_row = {"est_id": est_id}
     for key, val in protein_data.items():
-        prot_row[key] = val
+        if key in PROTEIN_DB_COLUMNS:
+            prot_row[key] = val
     client.table("protein").upsert(prot_row, on_conflict="est_id").execute()
 
     # --- Hours ---
@@ -74,9 +95,16 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     client.table("hours").upsert(hours_row, on_conflict="est_id").execute()
 
     # --- Salsa ---
+    SALSA_DB_COLUMNS = {
+        "total_num", "verde_yes", "rojo_yes", "pico_yes", "pickles_yes",
+        "chipotle_yes", "avo_yes", "molcajete_yes", "macha_yes",
+        "other_1_name", "other_1_descrip", "other_2_name", "other_2_descrip",
+        "other_3_name", "other_3_descrip",
+    }
     salsa_row = {"est_id": est_id}
     for key, val in salsa_data.items():
-        salsa_row[key] = val
+        if key in SALSA_DB_COLUMNS:
+            salsa_row[key] = val
     client.table("salsa").upsert(salsa_row, on_conflict="est_id").execute()
 
     # --- Descriptions ---
