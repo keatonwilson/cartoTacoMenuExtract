@@ -57,6 +57,8 @@ with tab_item:
                     data["img_url"] = upload_spec_image(new_img.getvalue(), new_img.name)
                 create_item_spec(data)
                 st.success(f"Created '{new_name}'!")
+                for k in ["new_item_name", "new_item_origin", "new_item_short", "new_item_long"]:
+                    st.session_state[k] = ""
                 st.rerun()
 
     # Edit/Delete
@@ -123,6 +125,8 @@ with tab_protein:
                 }
                 create_protein_spec(data)
                 st.success(f"Created '{new_pname}'!")
+                for k in ["new_prot_name", "new_prot_origin", "new_prot_short", "new_prot_long"]:
+                    st.session_state[k] = ""
                 st.rerun()
 
     # Edit/Delete

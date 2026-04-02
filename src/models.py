@@ -128,6 +128,10 @@ class ProteinData(BaseModel):
     veg_style_1: str = ""
     veg_style_2: str = ""
     veg_style_3: str = ""
+    protein_specs: list[str] = Field(
+        default_factory=list,
+        description="Notable specialty proteins (text only, FK linking done manually)",
+    )
 
 
 class HoursData(BaseModel):
@@ -156,6 +160,7 @@ class HoursData(BaseModel):
 
 class SalsaData(BaseModel):
     total_num: int | None = None
+    heat_overall: int | None = Field(default=None, ge=1, le=10)
     verde_yes: bool = False
     rojo_yes: bool = False
     pico_yes: bool = False
@@ -170,6 +175,10 @@ class SalsaData(BaseModel):
     other_2_descrip: str = ""
     other_3_name: str = ""
     other_3_descrip: str = ""
+    salsa_specs: list[str] = Field(
+        default_factory=list,
+        description="Notable specialty salsas (text only, FK linking done manually)",
+    )
 
 
 class DescriptionData(BaseModel):
