@@ -119,7 +119,7 @@ if "extraction" in st.session_state:
         items = [
             "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
             "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
-            "enchilada", "tamale", "sope", "caldo",
+            "enchilada", "tamale", "sope", "caldo", "snacks", "quesadilla",
         ]
         cols = st.columns(4)
         for i, item in enumerate(items):

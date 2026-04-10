@@ -34,22 +34,14 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     description_data = row["description_data"]
 
     # --- Sites ---
-    site_row = {
-        "name": site_data.get("name") or row["restaurant_name"],
-        "type": site_data.get("type") or None,
-        "address": site_data.get("address") or None,
-        "phone": site_data.get("phone") or None,
-        "website": site_data.get("website") or None,
-        "instagram": site_data.get("instagram") or None,
-        "facebook": site_data.get("facebook") or None,
-        "contact": site_data.get("contact") or None,
-        "lat_1": site_data.get("lat_1"),
-        "lon_1": site_data.get("lon_1"),
-        "days_loc_1": site_data.get("days_loc_1") or None,
-        "lat_2": site_data.get("lat_2"),
-        "lon_2": site_data.get("lon_2"),
-        "days_loc_2": site_data.get("days_loc_2") or None,
+    SITE_DB_COLUMNS = {
+        "name", "type", "address", "phone", "website", "instagram", "facebook",
+        "lat_1", "lon_1", "days_loc_1",
     }
+    site_row = {"name": site_data.get("name") or row["restaurant_name"]}
+    for key in SITE_DB_COLUMNS - {"name"}:
+        val = site_data.get(key)
+        site_row[key] = val if val not in (None, "") else None
 
     if est_id is None:
         # est_id is not auto-generated; find the next available value
@@ -62,10 +54,12 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     MENU_DB_COLUMNS = {
         "burro_yes", "taco_yes", "torta_yes", "dog_yes", "plate_yes", "cocktail_yes",
         "gordita_yes", "huarache_yes", "cemita_yes", "flauta_yes", "chalupa_yes",
-        "molote_yes", "tostada_yes", "enchilada_yes", "tamale_yes", "sope_yes", "caldo_yes",
+        "molote_yes", "tostada_yes", "enchilada_yes", "tamale_yes", "sope_yes", "caldo_yes", "snacks_yes",
+        "quesadilla_yes",
         "burro_perc", "taco_perc", "torta_perc", "dog_perc", "plate_perc", "cocktail_perc",
         "gordita_perc", "huarache_perc", "cemita_perc", "flauta_perc", "chalupa_perc",
-        "molote_perc", "tostada_perc", "enchilada_perc", "tamale_perc", "sope_perc", "caldo_perc",
+        "molote_perc", "tostada_perc", "enchilada_perc", "tamale_perc", "sope_perc", "caldo_perc", "snacks_perc",
+        "quesadilla_perc",
         "flour_corn", "handmade_tortilla",
     }
     menu_row = {"est_id": est_id}
@@ -81,9 +75,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         name = menu_row.get(f"specialty_item_{i}")
         if name:
             result = client.table("item_spec").select("id").eq("name", name).limit(1).execute().data
-            menu_row[f"specialty_item_id_{i}"] = result[0]["id"] if result else None
+            menu_row[f"spec_id_{i}"] = result[0]["id"] if result else None
         else:
-            menu_row[f"specialty_item_id_{i}"] = None
+            menu_row[f"spec_id_{i}"] = None
     client.table("menu").upsert(menu_row, on_conflict="est_id").execute()
 
     # --- Protein ---
@@ -108,9 +102,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         name = prot_row.get(f"protein_spec_{i}")
         if name:
             result = client.table("protein_spec").select("id").eq("name", name).limit(1).execute().data
-            prot_row[f"protein_spec_id_{i}"] = result[0]["id"] if result else None
+            prot_row[f"spec_id_{i}"] = result[0]["id"] if result else None
         else:
-            prot_row[f"protein_spec_id_{i}"] = None
+            prot_row[f"spec_id_{i}"] = None
     client.table("protein").upsert(prot_row, on_conflict="est_id").execute()
 
     # --- Hours ---
