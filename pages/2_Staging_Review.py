@@ -56,16 +56,18 @@ with tab_site:
             try:
                 from src.description_gen import enrich_from_web
 
-                result = enrich_from_web(row["restaurant_name"], site.address)
-                if result.address and not site.address:
+                current_name = st.session_state.get("r_name", row["restaurant_name"])
+                current_addr = st.session_state.get("r_addr", site.address)
+                result = enrich_from_web(current_name, current_addr)
+                if result.address and not st.session_state.get("r_addr", site.address):
                     st.session_state["r_addr"] = result.address
-                if result.phone and not site.phone:
+                if result.phone and not st.session_state.get("r_phone", site.phone):
                     st.session_state["r_phone"] = result.phone
-                if result.website and not site.website:
+                if result.website and not st.session_state.get("r_web", site.website):
                     st.session_state["r_web"] = result.website
-                if result.instagram and not site.instagram:
+                if result.instagram and not st.session_state.get("r_ig", site.instagram):
                     st.session_state["r_ig"] = result.instagram
-                if result.facebook and not site.facebook:
+                if result.facebook and not st.session_state.get("r_fb", site.facebook):
                     st.session_state["r_fb"] = result.facebook
                 if result.hours:
                     for field_name, value in result.hours.items():
@@ -91,16 +93,23 @@ with tab_site:
     facebook = st.text_input("Facebook", site.facebook, key="r_fb")
     contact = st.text_input("Contact", site.contact, key="r_contact")
     c1, c2 = st.columns(2)
-    lat_1 = c1.number_input("Latitude", value=site.lat_1 or 0.0, format="%.6f", key="r_lat")
-    lon_1 = c2.number_input("Longitude", value=site.lon_1 or 0.0, format="%.6f", key="r_lon")
+    if "r_lat_geocoded" in st.session_state:
+        st.session_state["r_lat"] = st.session_state.pop("r_lat_geocoded")
+        st.session_state["r_lon"] = st.session_state.pop("r_lon_geocoded")
+    if "r_lat" not in st.session_state:
+        st.session_state["r_lat"] = site.lat_1 or 0.0
+    if "r_lon" not in st.session_state:
+        st.session_state["r_lon"] = site.lon_1 or 0.0
+    lat_1 = c1.number_input("Latitude", format="%.6f", key="r_lat")
+    lon_1 = c2.number_input("Longitude", format="%.6f", key="r_lon")
     if st.button("📍 Geocode from Address"):
         if address:
             with st.spinner("Geocoding..."):
                 from src.description_gen import geocode_address
                 coords = geocode_address(address)
                 if coords:
-                    st.session_state["r_lat"] = coords[0]
-                    st.session_state["r_lon"] = coords[1]
+                    st.session_state["r_lat_geocoded"] = coords[0]
+                    st.session_state["r_lon_geocoded"] = coords[1]
                     st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
                     st.rerun()
                 else:
@@ -114,7 +123,7 @@ with tab_menu:
     items = [
         "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
         "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
-        "enchilada", "tamale", "sope", "caldo",
+        "enchilada", "tamale", "sope", "caldo", "snacks", "quesadilla",
     ]
     cols = st.columns(4)
     for i, item in enumerate(items):
@@ -166,6 +175,9 @@ with tab_protein:
         prot_data[f"{prot}_style_3"] = c3.text_input(
             "Style 3", getattr(protein, f"{prot}_style_3"), key=f"rev_prot_{prot}_s3"
         )
+    protein_spec_text = st.text_area(
+        "Specialty Proteins (one per line)", "\n".join(protein.protein_specs), key="rev_prot_specs"
+    )
 
 with tab_hours:
     hrs_data = {}
@@ -183,9 +195,14 @@ with tab_hours:
         )
 
 with tab_salsa:
-    total_num = st.number_input(
+    c1, c2 = st.columns(2)
+    total_num = c1.number_input(
         "Total Salsas", value=salsa.total_num or 0, min_value=0, key="rev_salsa_total"
     )
+    heat_overall = c2.number_input(
+        "Overall Heat (1–10)", min_value=1, max_value=10,
+        value=salsa.heat_overall or 1, key="rev_salsa_heat"
+    ) or None
     sal_flags = {}
     salsa_types = ["verde", "rojo", "pico", "pickles", "chipotle", "avo", "molcajete", "macha"]
     cols = st.columns(4)
@@ -203,6 +220,9 @@ with tab_salsa:
         other_sal[f"other_{n}_descrip"] = c2.text_input(
             f"Other {n} Description", getattr(salsa, f"other_{n}_descrip"), key=f"rev_salsa_o{n}_d"
         )
+    salsa_spec_text = st.text_area(
+        "Specialty Salsas (one per line)", "\n".join(salsa.salsa_specs), key="rev_salsa_specs"
+    )
 
 with tab_desc:
     if st.button("✨ Generate Descriptions"):
@@ -219,11 +239,16 @@ with tab_desc:
                         handmade_tortilla=handmade,
                         specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                     ),
-                    protein=ProteinData(**prot_data),
+                    protein=ProteinData(
+                        **prot_data,
+                        protein_specs=[s.strip() for s in protein_spec_text.split("\n") if s.strip()],
+                    ),
                     hours=HoursData(**hrs_data),
                     salsa=SalsaData(
                         total_num=total_num if total_num > 0 else None,
+                        heat_overall=heat_overall,
                         **sal_flags, **other_sal,
+                        salsa_specs=[s.strip() for s in salsa_spec_text.split("\n") if s.strip()],
                     ),
                     description=DescriptionData(
                         short_descrip=desc.short_descrip,
@@ -259,10 +284,16 @@ if col1.button("💾 Save Changes"):
             **menu_flags, **menu_percs, flour_corn=flour_corn, handmade_tortilla=handmade,
             specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
         ).model_dump(),
-        "protein_data": ProteinData(**prot_data).model_dump(),
+        "protein_data": ProteinData(
+            **prot_data,
+            protein_specs=[s.strip() for s in protein_spec_text.split("\n") if s.strip()],
+        ).model_dump(),
         "hours_data": HoursData(**hrs_data).model_dump(),
         "salsa_data": SalsaData(
-            total_num=total_num if total_num > 0 else None, **sal_flags, **other_sal,
+            total_num=total_num if total_num > 0 else None,
+            heat_overall=heat_overall,
+            **sal_flags, **other_sal,
+            salsa_specs=[s.strip() for s in salsa_spec_text.split("\n") if s.strip()],
         ).model_dump(),
         "description_data": DescriptionData(
             short_descrip=short_descrip, long_descrip=long_descrip, region=region,

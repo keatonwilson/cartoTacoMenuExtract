@@ -119,7 +119,7 @@ if "extraction" in st.session_state:
         items = [
             "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
             "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
-            "enchilada", "tamale", "sope", "caldo",
+            "enchilada", "tamale", "sope", "caldo", "snacks", "quesadilla",
         ]
         cols = st.columns(4)
         for i, item in enumerate(items):
@@ -174,6 +174,11 @@ if "extraction" in st.session_state:
             protein_data[f"{prot}_style_3"] = c3.text_input(
                 "Style 3", getattr(ext.protein, f"{prot}_style_3"), key=f"prot_{prot}_s3"
             )
+        protein_spec_text = st.text_area(
+            "Specialty Proteins (one per line)",
+            "\n".join(ext.protein.protein_specs),
+            key="prot_specs",
+        )
 
     # --- Hours ---
     with tab_hours:
@@ -193,7 +198,12 @@ if "extraction" in st.session_state:
 
     # --- Salsas ---
     with tab_salsa:
-        total_num = st.number_input("Total Salsas", value=ext.salsa.total_num or 0, min_value=0)
+        c1, c2 = st.columns(2)
+        total_num = c1.number_input("Total Salsas", value=ext.salsa.total_num or 0, min_value=0)
+        heat_overall = c2.number_input(
+            "Overall Heat (1–10)", min_value=1, max_value=10,
+            value=ext.salsa.heat_overall or 1,
+        ) or None
         salsa_flags = {}
         salsa_types = ["verde", "rojo", "pico", "pickles", "chipotle", "avo", "molcajete", "macha"]
         cols = st.columns(4)
@@ -214,6 +224,11 @@ if "extraction" in st.session_state:
                 getattr(ext.salsa, f"other_{n}_descrip"),
                 key=f"salsa_o{n}_d",
             )
+        salsa_spec_text = st.text_area(
+            "Specialty Salsas (one per line)",
+            "\n".join(ext.salsa.salsa_specs),
+            key="salsa_specs",
+        )
 
     # --- Description ---
     with tab_desc:
@@ -232,11 +247,16 @@ if "extraction" in st.session_state:
                             handmade_tortilla=handmade,
                             specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                         ),
-                        protein=ProteinData(**protein_data),
+                        protein=ProteinData(
+                            **protein_data,
+                            protein_specs=[s.strip() for s in protein_spec_text.split("\n") if s.strip()],
+                        ),
                         hours=HoursData(**hours_data),
                         salsa=SalsaData(
                             total_num=total_num if total_num > 0 else None,
+                            heat_overall=heat_overall,
                             **salsa_flags, **other_salsa,
+                            salsa_specs=[s.strip() for s in salsa_spec_text.split("\n") if s.strip()],
                         ),
                         description=DescriptionData(
                             short_descrip=ext.description.short_descrip,
@@ -276,12 +296,16 @@ if "extraction" in st.session_state:
                         handmade_tortilla=handmade,
                         specialty_items=[s.strip() for s in specialty_text.split("\n") if s.strip()],
                     ),
-                    protein=ProteinData(**protein_data),
+                    protein=ProteinData(
+                        **protein_data,
+                        protein_specs=[s.strip() for s in protein_spec_text.split("\n") if s.strip()],
+                    ),
                     hours=HoursData(**hours_data),
                     salsa=SalsaData(
                         total_num=total_num if total_num > 0 else None,
-                        **salsa_flags,
-                        **other_salsa,
+                        heat_overall=heat_overall,
+                        **salsa_flags, **other_salsa,
+                        salsa_specs=[s.strip() for s in salsa_spec_text.split("\n") if s.strip()],
                     ),
                     description=DescriptionData(
                         short_descrip=short_descrip,

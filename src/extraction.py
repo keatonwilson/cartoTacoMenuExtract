@@ -21,10 +21,18 @@ Leave fields empty/false if the information is not present.
 For protein styles, use common short names like "carne asada", "al pastor", "carnitas",
 "pollo asado", "birria", "lengua", "cabeza", "buche", "chorizo", "chicharron", etc.
 Categorize each protein under the correct category (chicken, beef, pork, fish, veg).
+For particularly notable or specialty proteins that stand out on the menu (e.g. tripa,
+buche, cabeza, lengua, barbacoa), list up to 3 in protein_specs.
 
 For hours, use 24-hour format like "08:00", "21:00".
 
 For tortilla type, use "Flour", "Corn", or "Both".
+
+"plate" (plate_yes/plate_perc) covers all full-meal offerings: platos, combination plates, combo meals, and any bundled meal with sides like rice and beans.
+
+For heat_overall, rate the overall heat level of the restaurant's salsas on a scale of 1 (mild) to 10 (very hot). Only set this if salsa information is visible.
+
+For any salsas that are notably unique or house-made beyond the standard types (verde, rojo, pico, etc.), list up to 2 in salsa_specs.
 
 For site type, use "Brick and Mortar", "Stand", or "Truck" if you can determine it.
 
