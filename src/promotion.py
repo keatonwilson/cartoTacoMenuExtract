@@ -74,14 +74,18 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     specialty = menu_data.get("specialty_items", [])
     for i in range(1, 5):
         menu_row[f"specialty_item_{i}"] = specialty[i - 1] if i <= len(specialty) else None
-    # Look up item_spec IDs by name for columns 1..3
+    # Look up item_spec IDs by name for columns 1..3.
+    # NOTE: the live menu/protein/salsa tables store the FK in `spec_id_{i}`
+    # columns. The `specialty_item_id_*`/`protein_spec_id_*` columns named in
+    # migrations 006/009 were never applied to the database — do not rename
+    # these to match the migrations or promotion will break (PGRST204).
     for i in range(1, 4):
         name = menu_row.get(f"specialty_item_{i}")
         if name:
             result = client.table("item_spec").select("id").eq("name", name).limit(1).execute().data
-            menu_row[f"specialty_item_id_{i}"] = result[0]["id"] if result else None
+            menu_row[f"spec_id_{i}"] = result[0]["id"] if result else None
         else:
-            menu_row[f"specialty_item_id_{i}"] = None
+            menu_row[f"spec_id_{i}"] = None
     client.table("menu").upsert(menu_row, on_conflict="est_id").execute()
 
     # --- Protein ---
@@ -106,9 +110,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         name = prot_row.get(f"protein_spec_{i}")
         if name:
             result = client.table("protein_spec").select("id").eq("name", name).limit(1).execute().data
-            prot_row[f"protein_spec_id_{i}"] = result[0]["id"] if result else None
+            prot_row[f"spec_id_{i}"] = result[0]["id"] if result else None
         else:
-            prot_row[f"protein_spec_id_{i}"] = None
+            prot_row[f"spec_id_{i}"] = None
     client.table("protein").upsert(prot_row, on_conflict="est_id").execute()
 
     # --- Hours ---
