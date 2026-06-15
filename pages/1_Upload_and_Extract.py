@@ -182,12 +182,14 @@ if "extraction" in st.session_state:
                 key=K(f"menu_{perc_key}"),
             ) or None
         c1, c2 = st.columns(2)
+        # Stored values are lowercase (flour/corn/both); display capitalized.
+        _fc_opts = ["", "flour", "corn", "both"]
+        _fc_val = (ext.menu.flour_corn or "").lower()
         flour_corn = c1.selectbox(
             "Tortilla Type",
-            ["", "Flour", "Corn", "Both"],
-            index=["", "Flour", "Corn", "Both"].index(ext.menu.flour_corn)
-            if ext.menu.flour_corn in ["", "Flour", "Corn", "Both"]
-            else 0,
+            _fc_opts,
+            index=_fc_opts.index(_fc_val) if _fc_val in _fc_opts else 0,
+            format_func=lambda x: x.capitalize() if x else "—",
             key=K("menu_flour_corn"),
         )
         handmade = c2.checkbox("Handmade Tortilla", ext.menu.handmade_tortilla, key=K("menu_handmade"))

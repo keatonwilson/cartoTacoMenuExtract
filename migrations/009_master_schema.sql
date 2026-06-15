@@ -1,12 +1,18 @@
 -- Master schema migration — idempotent, supersedes 004–007.
--- Run this on any fresh database to bring all tables up to the current full schema.
--- Safe to run on an existing database that has already run earlier migrations.
+-- Reflects the ACTUAL live production schema. Run this on a database that
+-- already has the base sites/menu/protein/salsa/hours/descriptions tables to
+-- bring it up to the current schema. Safe to run multiple times.
+--
+-- NOTE: the live tables store specialty/protein/salsa FK ids in spec_id_*
+-- columns (NOT specialty_item_id_*/protein_spec_id_*/salsa_spec_id_*), and the
+-- live sites table has no `contact` column. Earlier drafts of 004–007 diverged
+-- from this; do not reintroduce those names.
 
 -- ============================================================
--- sites: add missing columns
+-- sites: nothing to add — the live table has no additional columns.
+-- (SiteData.contact is captured during extraction but is not promoted; there
+--  is no `contact` column in the live sites table.)
 -- ============================================================
-ALTER TABLE sites
-  ADD COLUMN IF NOT EXISTS contact text;
 
 -- ============================================================
 -- menu: add missing columns
@@ -33,9 +39,9 @@ ALTER TABLE menu
   ADD COLUMN IF NOT EXISTS specialty_item_2 text,
   ADD COLUMN IF NOT EXISTS specialty_item_3 text,
   ADD COLUMN IF NOT EXISTS specialty_item_4 text,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_1 integer,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_2 integer,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_3 integer;
+  ADD COLUMN IF NOT EXISTS spec_id_1 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_2 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_3 integer;
 
 -- ============================================================
 -- protein: add missing columns
@@ -49,19 +55,22 @@ ALTER TABLE protein
   ADD COLUMN IF NOT EXISTS protein_spec_1 text,
   ADD COLUMN IF NOT EXISTS protein_spec_2 text,
   ADD COLUMN IF NOT EXISTS protein_spec_3 text,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_1 integer,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_2 integer,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_3 integer;
+  ADD COLUMN IF NOT EXISTS spec_id_1 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_2 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_3 integer;
 
 -- ============================================================
 -- salsa: add missing columns
 -- ============================================================
 ALTER TABLE salsa
   ADD COLUMN IF NOT EXISTS heat_overall integer,
+  ADD COLUMN IF NOT EXISTS other_1_heat integer,
+  ADD COLUMN IF NOT EXISTS other_2_heat integer,
+  ADD COLUMN IF NOT EXISTS other_3_heat integer,
   ADD COLUMN IF NOT EXISTS salsa_spec_1 text,
   ADD COLUMN IF NOT EXISTS salsa_spec_2 text,
-  ADD COLUMN IF NOT EXISTS salsa_spec_id_1 integer,
-  ADD COLUMN IF NOT EXISTS salsa_spec_id_2 integer;
+  ADD COLUMN IF NOT EXISTS spec_id_1 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_2 integer;
 
 -- ============================================================
 -- descriptions: add missing columns

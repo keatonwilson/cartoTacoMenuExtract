@@ -98,7 +98,7 @@ class MenuData(BaseModel):
     snacks_perc: float | None = Field(default=None, ge=0, le=1)
     quesadilla_yes: bool = False
     quesadilla_perc: float | None = Field(default=None, ge=0, le=1)
-    flour_corn: str = Field(default="", description="'Flour', 'Corn', or 'Both'")
+    flour_corn: str = Field(default="", description="lowercase: 'flour', 'corn', or 'both'")
     handmade_tortilla: bool = False
     specialty_items: list[str] = Field(
         default_factory=list,

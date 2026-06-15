@@ -161,10 +161,13 @@ with tab_menu:
             key=K(f"rev_menu_{perc_key}"),
         ) or None
     c1, c2 = st.columns(2)
+    # Stored values are lowercase (flour/corn/both); display capitalized.
+    _fc_opts = ["", "flour", "corn", "both"]
+    _fc_val = (menu.flour_corn or "").lower()
     flour_corn = c1.selectbox(
-        "Tortilla Type", ["", "Flour", "Corn", "Both"],
-        index=["", "Flour", "Corn", "Both"].index(menu.flour_corn)
-        if menu.flour_corn in ["", "Flour", "Corn", "Both"] else 0,
+        "Tortilla Type", _fc_opts,
+        index=_fc_opts.index(_fc_val) if _fc_val in _fc_opts else 0,
+        format_func=lambda x: x.capitalize() if x else "—",
         key=K("rev_fc"),
     )
     handmade = c2.checkbox("Handmade Tortilla", menu.handmade_tortilla, key=K("rev_hm"))

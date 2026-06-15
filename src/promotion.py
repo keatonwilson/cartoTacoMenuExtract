@@ -70,6 +70,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     for key in MENU_DB_COLUMNS:
         if key.endswith("_perc") and menu_row.get(key) is None:
             menu_row[key] = 0.0
+    # Tortilla category is stored lowercase (flour/corn/both)
+    if menu_row.get("flour_corn"):
+        menu_row["flour_corn"] = menu_row["flour_corn"].lower()
     # Map specialty_items list to specialty_item_1..4 columns + resolve IDs
     specialty = menu_data.get("specialty_items", [])
     for i in range(1, 5):
