@@ -56,7 +56,7 @@ def _build_data_summary(ext: ExtractedEstablishment) -> str:
     for item in [
         "burro", "taco", "torta", "dog", "plate", "cocktail", "gordita",
         "huarache", "cemita", "flauta", "chalupa", "molote", "tostada",
-        "enchilada", "tamale", "sope", "caldo",
+        "enchilada", "tamale", "sope", "caldo", "snacks", "quesadilla",
     ]:
         if getattr(ext.menu, f"{item}_yes", False):
             menu_items.append(item)

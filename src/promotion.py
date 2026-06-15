@@ -66,6 +66,10 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     for key, val in menu_data.items():
         if key in MENU_DB_COLUMNS:
             menu_row[key] = val
+    # Coerce null _perc values to 0.0 — DB columns have NOT NULL constraints
+    for key in MENU_DB_COLUMNS:
+        if key.endswith("_perc") and menu_row.get(key) is None:
+            menu_row[key] = 0.0
     # Map specialty_items list to specialty_item_1..4 columns + resolve IDs
     specialty = menu_data.get("specialty_items", [])
     for i in range(1, 5):
@@ -75,9 +79,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         name = menu_row.get(f"specialty_item_{i}")
         if name:
             result = client.table("item_spec").select("id").eq("name", name).limit(1).execute().data
-            menu_row[f"spec_id_{i}"] = result[0]["id"] if result else None
+            menu_row[f"specialty_item_id_{i}"] = result[0]["id"] if result else None
         else:
-            menu_row[f"spec_id_{i}"] = None
+            menu_row[f"specialty_item_id_{i}"] = None
     client.table("menu").upsert(menu_row, on_conflict="est_id").execute()
 
     # --- Protein ---
@@ -102,9 +106,9 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         name = prot_row.get(f"protein_spec_{i}")
         if name:
             result = client.table("protein_spec").select("id").eq("name", name).limit(1).execute().data
-            prot_row[f"spec_id_{i}"] = result[0]["id"] if result else None
+            prot_row[f"protein_spec_id_{i}"] = result[0]["id"] if result else None
         else:
-            prot_row[f"spec_id_{i}"] = None
+            prot_row[f"protein_spec_id_{i}"] = None
     client.table("protein").upsert(prot_row, on_conflict="est_id").execute()
 
     # --- Hours ---

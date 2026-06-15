@@ -14,6 +14,17 @@ from src.models import (
 st.set_page_config(page_title="Upload & Extract", page_icon="📸", layout="wide")
 st.title("📸 Upload & Extract Menu")
 
+
+def _clear_form_state():
+    """Drop all keyed form widget state so the next extraction starts clean.
+
+    Streamlit retains keyed widget values across reruns; without clearing them a
+    new extraction would inherit the previous establishment's form values.
+    """
+    for k in list(st.session_state.keys()):
+        if k.startswith(("menu_", "prot_", "hrs_", "salsa_", "site_", "lat_", "lon_")):
+            del st.session_state[k]
+
 # --- Upload ---
 uploaded_files = st.file_uploader(
     "Upload menu photo(s)",
@@ -32,6 +43,7 @@ if uploaded_files and st.button("🔍 Extract with Claude Vision", type="primary
         image_files = [(f.name, f.getvalue()) for f in uploaded_files]
         try:
             result, raw_json = extract_from_images(image_files)
+            _clear_form_state()  # discard any prior establishment's form state
             st.session_state["extraction"] = result
             st.session_state["raw_json"] = raw_json
             st.session_state["uploaded_files"] = uploaded_files
@@ -51,59 +63,85 @@ if "extraction" in st.session_state:
 
     # --- Site Info ---
     with tab_site:
+        # Seed keyed widget state from the extraction once (cleared on new
+        # extraction / save by _clear_form_state). Enrich/geocode write into
+        # these same keys so their results reliably appear in the form.
+        site_defaults = {
+            "site_name": ext.restaurant_name,
+            "site_addr": ext.site.address,
+            "site_phone": ext.site.phone,
+            "site_web": ext.site.website,
+            "site_ig": ext.site.instagram,
+            "site_fb": ext.site.facebook,
+            "site_contact": ext.site.contact,
+        }
+        for k, v in site_defaults.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
+        # Apply a pending geocode result, then init lat/lon from the extraction.
+        if "lat_geocoded" in st.session_state:
+            st.session_state["lat_1"] = st.session_state.pop("lat_geocoded")
+            st.session_state["lon_1"] = st.session_state.pop("lon_geocoded")
+        if "lat_1" not in st.session_state:
+            st.session_state["lat_1"] = ext.site.lat_1 or 0.0
+        if "lon_1" not in st.session_state:
+            st.session_state["lon_1"] = ext.site.lon_1 or 0.0
+
         if st.button("🌐 Enrich from Web"):
             with st.spinner("Searching the web for business details..."):
                 try:
                     from src.description_gen import enrich_from_web
 
-                    result = enrich_from_web(ext.restaurant_name, ext.site.address)
-                    if result.address and not ext.site.address:
-                        ext.site.address = result.address
-                    if result.phone and not ext.site.phone:
-                        ext.site.phone = result.phone
-                    if result.website and not ext.site.website:
-                        ext.site.website = result.website
-                    if result.instagram and not ext.site.instagram:
-                        ext.site.instagram = result.instagram
-                    if result.facebook and not ext.site.facebook:
-                        ext.site.facebook = result.facebook
+                    result = enrich_from_web(
+                        st.session_state["site_name"], st.session_state["site_addr"]
+                    )
+                    if result.address and not st.session_state["site_addr"]:
+                        st.session_state["site_addr"] = result.address
+                    if result.phone and not st.session_state["site_phone"]:
+                        st.session_state["site_phone"] = result.phone
+                    if result.website and not st.session_state["site_web"]:
+                        st.session_state["site_web"] = result.website
+                    if result.instagram and not st.session_state["site_ig"]:
+                        st.session_state["site_ig"] = result.instagram
+                    if result.facebook and not st.session_state["site_fb"]:
+                        st.session_state["site_fb"] = result.facebook
                     if result.hours:
                         for field_name, value in result.hours.items():
-                            if value and not getattr(ext.hours, field_name, ""):
-                                setattr(ext.hours, field_name, value)
-                    st.session_state["extraction"] = ext
+                            hrs_key = f"hrs_{field_name.replace('_start', '_s').replace('_end', '_e')}"
+                            if value and not st.session_state.get(hrs_key, ""):
+                                st.session_state[hrs_key] = value
                     st.success("Enrichment complete! Empty fields have been filled in.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Enrichment failed: {e}")
         c1, c2 = st.columns(2)
-        name = c1.text_input("Restaurant Name", ext.restaurant_name)
+        name = c1.text_input("Restaurant Name", key="site_name")
         site_type = c2.selectbox(
             "Type",
             ["Brick and Mortar", "Stand", "Truck", ""],
             index=["Brick and Mortar", "Stand", "Truck", ""].index(ext.site.type)
             if ext.site.type in ["Brick and Mortar", "Stand", "Truck"]
             else 3,
+            key="site_type",
         )
-        address = st.text_input("Address", ext.site.address)
+        address = st.text_input("Address", key="site_addr")
         c1, c2, c3 = st.columns(3)
-        phone = c1.text_input("Phone", ext.site.phone)
-        website = c2.text_input("Website", ext.site.website)
-        instagram = c3.text_input("Instagram", ext.site.instagram)
-        facebook = st.text_input("Facebook", ext.site.facebook)
-        contact = st.text_input("Contact", ext.site.contact)
+        phone = c1.text_input("Phone", key="site_phone")
+        website = c2.text_input("Website", key="site_web")
+        instagram = c3.text_input("Instagram", key="site_ig")
+        facebook = st.text_input("Facebook", key="site_fb")
+        contact = st.text_input("Contact", key="site_contact")
         c1, c2 = st.columns(2)
-        lat_1 = c1.number_input("Latitude", value=ext.site.lat_1 or 0.0, format="%.6f", key="lat_1")
-        lon_1 = c2.number_input("Longitude", value=ext.site.lon_1 or 0.0, format="%.6f", key="lon_1")
+        lat_1 = c1.number_input("Latitude", format="%.6f", key="lat_1")
+        lon_1 = c2.number_input("Longitude", format="%.6f", key="lon_1")
         if st.button("📍 Geocode from Address"):
             if address:
                 with st.spinner("Geocoding..."):
                     from src.description_gen import geocode_address
                     coords = geocode_address(address)
                     if coords:
-                        ext.site.lat_1 = coords[0]
-                        ext.site.lon_1 = coords[1]
-                        st.session_state["extraction"] = ext
+                        st.session_state["lat_geocoded"] = coords[0]
+                        st.session_state["lon_geocoded"] = coords[1]
                         st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
                         st.rerun()
                     else:
@@ -325,9 +363,10 @@ if "extraction" in st.session_state:
                     updated, st.session_state["raw_json"], image_urls
                 )
                 st.success(f"Saved to staging! ID: `{row_id}`")
-                # Clear extraction from session
+                # Clear extraction + all form state so the next upload starts clean
                 del st.session_state["extraction"]
                 del st.session_state["raw_json"]
                 del st.session_state["uploaded_files"]
+                _clear_form_state()
             except Exception as e:
                 st.error(f"Save failed: {e}")

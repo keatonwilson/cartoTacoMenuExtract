@@ -23,6 +23,16 @@ if not rows:
 options = {r["id"]: f"{r['restaurant_name']} ({r['status']}) — {r['created_at'][:10]}" for r in rows}
 selected_id = st.selectbox("Select extraction", options.keys(), format_func=lambda x: options[x])
 
+# Reset form state whenever the active record changes. Streamlit retains keyed
+# widget values across reruns, so without this the previously selected
+# establishment's data bleeds into the newly selected one. All form widget keys
+# on this page start with "r_" (site tab) or "rev_" (every other tab).
+if st.session_state.get("_active_staging_id") != selected_id:
+    for k in list(st.session_state.keys()):
+        if k.startswith("r_") or k.startswith("rev_"):
+            del st.session_state[k]
+    st.session_state["_active_staging_id"] = selected_id
+
 row = get_extraction(selected_id)
 
 # --- Source Images ---
