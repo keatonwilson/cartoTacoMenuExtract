@@ -11,8 +11,8 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 ## Key Files
 
 - `src/extraction.py` — Claude Vision prompt + API call (core intelligence)
-- `src/models.py` — Pydantic models mirroring production DB schema (+ `ScrapedSpot` for scouted pending spots)
-- `src/scraping.py` — Web scouting for pending spots: Claude web_search → `ScrapedSpot`, plus duplicate detection (name + 150 m proximity + staging)
+- `src/models.py` — Pydantic models mirroring production DB schema (+ `ScrapedSpot`/`DiscoveredCandidate` for scouted pending spots)
+- `src/scraping.py` — Web scouting for pending spots: Claude web_search → `ScrapedSpot`; city-wide discovery (`discover_candidates` diffs one search pass against production+staging names); duplicate detection (name + 150 m proximity + staging)
 - `src/staging.py` — Staging table CRUD (`save_scraped_spot` for the web_scrape pipeline)
 - `src/promotion.py` — Staging → production upserts across 6 tables; web_scrape rows take the pending path (sites+descriptions+hours only, `vetting_status='pending'`); menu-photo promotion into a pending est_id flips it to vetted; `list_pending_sites`/`retract_pending_site`/`mark_vetted`
 - `src/spec_tables.py` — CRUD for `item_spec` and `protein_spec` reference tables
@@ -21,7 +21,7 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/2_Staging_Review.py` — Browse/edit staging data, approve/reject (pipeline filter; scouted rows show sources + confidence)
 - `pages/3_Promote.py` — Promote approved rows to production; pending-spots management (mark vetted / retract)
 - `pages/4_Spec_Tables.py` — CRUD UI for item_spec and protein_spec with AI descriptions
-- `pages/5_Scout_New_Spots.py` — Scout a new spot from the web → review/geocode → dedup check → stage as pending
+- `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
 
 ## Production Database Schema (Supabase)
 

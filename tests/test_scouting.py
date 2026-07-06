@@ -5,8 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
-from src.models import ScrapedSpot
+from src.models import DiscoveredCandidate, ScrapedSpot
 from src.promotion import promote, retract_pending_site
+from src.scraping import _normalize_name, mark_known_candidates
 
 
 # --- Fake Supabase client ---
@@ -157,6 +158,33 @@ def test_scraped_spot_defaults_are_empty():
     assert spot.site.name == ""
     assert spot.confidence == {}
     assert spot.evidence_urls == []
+
+
+# --- Discovery: known-name diffing ---
+
+def test_normalize_name_strips_accents_punctuation_case():
+    assert _normalize_name("Taquería “El Güero”!") == "taqueria el guero"
+    assert _normalize_name("  TACOS   APSON ") == "tacos apson"
+
+
+def test_mark_known_flags_exact_and_containment_matches():
+    candidates = [
+        DiscoveredCandidate(name="Tacos El Ejemplo"),   # containment of known
+        DiscoveredCandidate(name="Taquería Pico de Gallo"),  # exact (accent-insensitive)
+        DiscoveredCandidate(name="Birria Nueva"),        # genuinely new
+    ]
+    known = ["El Ejemplo", "Taqueria Pico de Gallo", "Seis Kitchen"]
+
+    marked = mark_known_candidates(candidates, known)
+    assert [c.already_known for c in marked] == [True, True, False]
+
+
+def test_mark_known_short_names_require_exact_match():
+    # "Rollies" ⊄ flagged by containment against "Rollies Mexican Patio"? It is
+    # long enough (7 chars) — but a tiny name like "Taco" must not match everything
+    candidates = [DiscoveredCandidate(name="Taco")]
+    marked = mark_known_candidates(candidates, ["Tacos Apson", "El Taco Tote"])
+    assert marked[0].already_known is False
 
 
 # --- Promotion: web_scrape path ---
