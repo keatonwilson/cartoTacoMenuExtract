@@ -1,19 +1,33 @@
 """Promote approved staging rows to production tables."""
 
+from datetime import datetime, timezone
+
 from src.supabase_client import get_client
 from src.staging import get_extraction, set_status
 
 
 def get_all_sites() -> list[dict]:
-    """Return all sites for the est_id picker."""
+    """Return all sites for the est_id picker (vetting_status marks pending targets)."""
     client = get_client()
-    return client.table("sites").select("est_id, name").order("name").execute().data
+    return client.table("sites").select("est_id, name, vetting_status").order("name").execute().data
 
 
 def find_sites_by_name(name: str) -> list[dict]:
     """Return sites whose name closely matches the given string (case-insensitive)."""
     client = get_client()
-    return client.table("sites").select("est_id, name, address").ilike("name", f"%{name}%").execute().data
+    return (
+        client.table("sites")
+        .select("est_id, name, address, vetting_status")
+        .ilike("name", f"%{name}%")
+        .execute()
+        .data
+    )
+
+
+def _next_est_id(client) -> int:
+    """est_id is not auto-generated; find the next available value."""
+    max_row = client.table("sites").select("est_id").order("est_id", desc=True).limit(1).execute().data
+    return (max_row[0]["est_id"] + 1) if max_row else 1
 
 
 def promote(row_id: str, est_id: int | None = None) -> int:
@@ -22,10 +36,19 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     If est_id is None, creates a new site and returns the new est_id.
     Otherwise upserts into the existing est_id.
 
+    web_scrape rows take the pending path (_promote_scraped): sites row with
+    vetting_status='pending' plus descriptions/hours only. menu_photo rows
+    write all six tables, and promoting into a pending est_id flips it to
+    vetted (the vetting loop).
+
     Returns the est_id used.
     """
     client = get_client()
     row = get_extraction(row_id)
+
+    if row.get("pipeline") == "web_scrape":
+        return _promote_scraped(client, row_id, row, est_id)
+
     site_data = row["site_data"]
     menu_data = row["menu_data"]
     protein_data = row["protein_data"]
@@ -44,9 +67,21 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         site_row[key] = val if val not in (None, "") else None
 
     if est_id is None:
-        # est_id is not auto-generated; find the next available value
-        max_row = client.table("sites").select("est_id").order("est_id", desc=True).limit(1).execute().data
-        est_id = (max_row[0]["est_id"] + 1) if max_row else 1
+        est_id = _next_est_id(client)
+    else:
+        # Vetting loop: promoting full menu-photo data into a pending spot
+        # (originally web-scraped) flips it to vetted
+        existing = (
+            client.table("sites")
+            .select("vetting_status")
+            .eq("est_id", est_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if existing and existing[0].get("vetting_status") == "pending":
+            site_row["vetting_status"] = "vetted"
+            site_row["vetted_at"] = datetime.now(timezone.utc).isoformat()
     site_row["est_id"] = est_id
     client.table("sites").upsert(site_row, on_conflict="est_id").execute()
 
@@ -142,3 +177,99 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     set_status(row_id, "promoted")
 
     return est_id
+
+
+def _promote_scraped(client, row_id: str, row: dict, est_id: int | None) -> int:
+    """Promote a web-scouted staging row as a pending (unvetted) site.
+
+    Writes sites (with vetting_status='pending' + provenance) and, only when
+    they contain data, descriptions and hours. menu/protein/salsa are skipped
+    entirely — no stub rows; the sites_complete view's LEFT JOINs handle their
+    absence and the frontend renders the preliminary card.
+    """
+    site_data = row["site_data"]
+    hours_data = row.get("hours_data") or {}
+    description_data = row.get("description_data") or {}
+    source_urls = row.get("source_urls") or []
+
+    SITE_DB_COLUMNS = {
+        "name", "type", "address", "phone", "website", "instagram", "facebook",
+        "lat_1", "lon_1", "days_loc_1",
+    }
+    site_row = {"name": site_data.get("name") or row["restaurant_name"]}
+    for key in SITE_DB_COLUMNS - {"name"}:
+        val = site_data.get(key)
+        site_row[key] = val if val not in (None, "") else None
+
+    site_row["vetting_status"] = "pending"
+    site_row["source"] = "web_scrape"
+    site_row["source_url"] = source_urls[0] if source_urls else None
+    site_row["scraped_at"] = row.get("created_at")
+
+    if est_id is None:
+        est_id = _next_est_id(client)
+    site_row["est_id"] = est_id
+    client.table("sites").upsert(site_row, on_conflict="est_id").execute()
+
+    # Hours: only when the scout actually found some
+    if any(v for v in hours_data.values()):
+        hours_row = {"est_id": est_id}
+        for key, val in hours_data.items():
+            hours_row[key] = val or None
+        client.table("hours").upsert(hours_row, on_conflict="est_id").execute()
+
+    # Descriptions: only when non-empty
+    if any(description_data.get(k) for k in ("short_descrip", "long_descrip", "region")):
+        desc_row = {
+            "est_id": est_id,
+            "short_descrip": description_data.get("short_descrip") or None,
+            "long_descrip": description_data.get("long_descrip") or None,
+            "region": description_data.get("region") or None,
+        }
+        client.table("descriptions").upsert(desc_row, on_conflict="est_id").execute()
+
+    set_status(row_id, "promoted")
+    return est_id
+
+
+# --- Pending site management ---
+
+def list_pending_sites() -> list[dict]:
+    """Return all production sites still awaiting vetting."""
+    client = get_client()
+    return (
+        client.table("sites")
+        .select("est_id, name, address, source_url, scraped_at, created_at")
+        .eq("vetting_status", "pending")
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def retract_pending_site(est_id: int) -> None:
+    """Delete a pending site that turned out to be closed/bogus/duplicate.
+
+    Refuses to touch vetted sites. Child rows are removed explicitly (their
+    FKs are NO ACTION); user_favorites/vibe_votes cascade via the FKs added
+    in cartoTaco migration 030.
+    """
+    client = get_client()
+    rows = client.table("sites").select("vetting_status").eq("est_id", est_id).limit(1).execute().data
+    if not rows:
+        raise ValueError(f"No site with est_id {est_id}")
+    if rows[0].get("vetting_status") != "pending":
+        raise ValueError(f"Site {est_id} is vetted — refusing to delete a vetted site")
+
+    for table in ("descriptions", "hours", "menu", "protein", "salsa"):
+        client.table(table).delete().eq("est_id", est_id).execute()
+    client.table("sites").delete().eq("est_id", est_id).execute()
+
+
+def mark_vetted(est_id: int) -> None:
+    """Manually flip a pending site to vetted (escape hatch; normally the
+    vetting flip happens inside promote())."""
+    client = get_client()
+    client.table("sites").update(
+        {"vetting_status": "vetted", "vetted_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("est_id", est_id).execute()

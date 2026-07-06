@@ -1,6 +1,15 @@
 # Unvetted Spots — Scraping Pipeline Plan (Streamlit side)
 
-Status: **PLAN — not yet implemented**
+Status: **IMPLEMENTED** (see CLAUDE.md for the shipped layout)
+
+> **Implementation deviation from §2:** instead of `requests`+`beautifulsoup4`
+> scraping, the shipped `src/scraping.py` uses Claude's `web_search` tool — the
+> same pattern as the existing `enrich_from_web` — so the app fetches nothing
+> itself, adds zero dependencies, and sidesteps robots.txt/copy concerns. The
+> page shipped as `pages/5_Scout_New_Spots.py` ("scout" beats "scrape" in the
+> UI). Geocoding reuses the existing Nominatim `geocode_address`. Everything
+> else (staging migration 010, `ScrapedSpot`, dedup, pending promotion path,
+> vetting flip, retraction) landed as planned.
 Master plan (schema, frontend, rollout phases): `cartoTaco/docs/UNVETTED_SPOTS_PLAN.md`
 
 This doc covers the `cartoTacoMenuExtract` half of the feature: a web-scraping
