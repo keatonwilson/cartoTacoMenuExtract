@@ -109,12 +109,16 @@ def extract_from_images(
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        # Adaptive thinking (on by default) spends output tokens before the
+        # JSON answer — leave headroom so the extraction never truncates
+        max_tokens=16000,
         system=SYSTEM_PROMPT + schema_json,
         messages=[{"role": "user", "content": content}],
     )
 
-    raw_text = response.content[0].text.strip()
+    # Thinking blocks may precede the text block — take the first text block,
+    # never content[0] blindly
+    raw_text = next(b.text for b in response.content if b.type == "text").strip()
     # Strip markdown fences if present
     if raw_text.startswith("```"):
         raw_text = raw_text.split("\n", 1)[1]

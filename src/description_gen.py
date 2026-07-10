@@ -176,7 +176,7 @@ def _extract_json(text: str) -> dict:
 def _web_search_tools() -> list[dict]:
     """Return the web_search tool config shared by description gen and enrichment."""
     return [{
-        "type": "web_search_20250305",
+        "type": "web_search_20260209",
         "name": "web_search",
         "max_uses": 5,
         "user_location": {
@@ -212,7 +212,7 @@ def generate_descriptions(ext: ExtractedEstablishment) -> tuple[str, str]:
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
@@ -292,7 +292,7 @@ def enrich_from_web(restaurant_name: str, current_address: str = "") -> Enrichme
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=ENRICH_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
@@ -432,7 +432,7 @@ def generate_spec_descriptions(name: str, origin: str, spec_type: str) -> tuple[
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=SPEC_DESCRIPTION_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],

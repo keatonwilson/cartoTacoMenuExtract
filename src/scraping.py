@@ -84,7 +84,7 @@ def scout_spot(name: str, hint_urls: list[str] | None = None) -> tuple[ScrapedSp
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=SCOUT_SYSTEM_PROMPT + schema_json,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
@@ -223,7 +223,7 @@ def discover_candidates(limit: int = 20, focus: str = "") -> tuple[list[Discover
     client = anthropic.Anthropic(api_key=get_anthropic_key())
     response = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=DISCOVER_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],

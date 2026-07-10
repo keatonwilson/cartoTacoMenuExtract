@@ -5,7 +5,7 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 ## Architecture
 
 - **Python + Streamlit** web app
-- **Claude Vision API** (claude-sonnet-4-20250514) for menu extraction
+- **Claude Vision API** (claude-sonnet-5) for menu extraction
 - **Supabase** for staging table + production tables + image storage
 
 ## Key Files

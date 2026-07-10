@@ -1,6 +1,7 @@
 """Staging table CRUD operations."""
 
 import uuid
+from src.config import EXTRACTION_MODEL
 from src.supabase_client import get_client
 from src.models import ExtractedEstablishment, ScrapedSpot
 
@@ -9,7 +10,7 @@ def save_extraction(
     extraction: ExtractedEstablishment,
     raw_json: dict,
     image_urls: list[str],
-    model: str = "claude-sonnet-4-20250514",
+    model: str = EXTRACTION_MODEL,
 ) -> str:
     """Save an extraction to the staging table. Returns the new row ID."""
     client = get_client()
@@ -29,7 +30,7 @@ def save_extraction(
     return result.data[0]["id"]
 
 
-def save_scraped_spot(spot: ScrapedSpot, raw_json: dict, model: str = "claude-sonnet-4-20250514") -> str:
+def save_scraped_spot(spot: ScrapedSpot, raw_json: dict, model: str = EXTRACTION_MODEL) -> str:
     """Save a web-scouted pending spot to the staging table. Returns the row ID.
 
     menu/protein/salsa stay empty ({}) — pending spots have no vetted data, and
