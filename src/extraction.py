@@ -26,7 +26,7 @@ buche, cabeza, lengua, barbacoa), list up to 3 in protein_specs.
 
 For hours, use 24-hour format like "08:00", "21:00".
 
-For tortilla type, use "Flour", "Corn", or "Both".
+For tortilla type, use the lowercase value "flour", "corn", or "both".
 
 "plate" (plate_yes/plate_perc) covers all full-meal offerings: platos, combination plates, combo meals, and any bundled meal with sides like rice and beans.
 

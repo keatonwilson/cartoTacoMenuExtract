@@ -23,6 +23,26 @@ if not rows:
 options = {r["id"]: f"{r['restaurant_name']} ({r['status']}) — {r['created_at'][:10]}" for r in rows}
 selected_id = st.selectbox("Select extraction", options.keys(), format_func=lambda x: options[x])
 
+# Every form widget key is namespaced to the selected record id. Streamlit keeps
+# an internal widget-state store keyed by widget identity, so simply deleting a
+# session_state key does NOT reliably reset a widget that stays on the page — the
+# previous establishment's values bleed through. Giving each record its own keys
+# makes them distinct widgets, so a freshly selected record always initializes
+# from its own row data.
+sid = selected_id
+
+
+def K(base: str) -> str:
+    """Namespace a widget key to the active staging record."""
+    return f"{base}__{sid}"
+
+
+# Drop widget state belonging to other records to keep session_state from growing
+# unbounded as you browse. Only touches namespaced form keys for non-active records.
+for _k in list(st.session_state.keys()):
+    if "__" in _k and not _k.endswith(f"__{sid}") and (_k.startswith("r_") or _k.startswith("rev_")):
+        del st.session_state[_k]
+
 row = get_extraction(selected_id)
 
 # --- Source Images ---
@@ -56,60 +76,61 @@ with tab_site:
             try:
                 from src.description_gen import enrich_from_web
 
-                current_name = st.session_state.get("r_name", row["restaurant_name"])
-                current_addr = st.session_state.get("r_addr", site.address)
+                current_name = st.session_state.get(K("r_name"), row["restaurant_name"])
+                current_addr = st.session_state.get(K("r_addr"), site.address)
                 result = enrich_from_web(current_name, current_addr)
-                if result.address and not st.session_state.get("r_addr", site.address):
-                    st.session_state["r_addr"] = result.address
-                if result.phone and not st.session_state.get("r_phone", site.phone):
-                    st.session_state["r_phone"] = result.phone
-                if result.website and not st.session_state.get("r_web", site.website):
-                    st.session_state["r_web"] = result.website
-                if result.instagram and not st.session_state.get("r_ig", site.instagram):
-                    st.session_state["r_ig"] = result.instagram
-                if result.facebook and not st.session_state.get("r_fb", site.facebook):
-                    st.session_state["r_fb"] = result.facebook
+                if result.address and not st.session_state.get(K("r_addr"), site.address):
+                    st.session_state[K("r_addr")] = result.address
+                if result.phone and not st.session_state.get(K("r_phone"), site.phone):
+                    st.session_state[K("r_phone")] = result.phone
+                if result.website and not st.session_state.get(K("r_web"), site.website):
+                    st.session_state[K("r_web")] = result.website
+                if result.instagram and not st.session_state.get(K("r_ig"), site.instagram):
+                    st.session_state[K("r_ig")] = result.instagram
+                if result.facebook and not st.session_state.get(K("r_fb"), site.facebook):
+                    st.session_state[K("r_fb")] = result.facebook
                 if result.hours:
                     for field_name, value in result.hours.items():
                         if value and not getattr(hours, field_name, ""):
-                            st.session_state[f"rev_hrs_{field_name.replace('_start', '_s').replace('_end', '_e')}"] = value
+                            hrs_key = f"rev_hrs_{field_name.replace('_start', '_s').replace('_end', '_e')}"
+                            st.session_state[K(hrs_key)] = value
                 st.success("Enrichment complete! Empty fields have been filled in.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Enrichment failed: {e}")
     c1, c2 = st.columns(2)
-    r_name = c1.text_input("Restaurant Name", row["restaurant_name"], key="r_name")
+    r_name = c1.text_input("Restaurant Name", row["restaurant_name"], key=K("r_name"))
     site_type = c2.selectbox(
         "Type", ["Brick and Mortar", "Stand", "Truck", ""],
         index=["Brick and Mortar", "Stand", "Truck", ""].index(site.type)
         if site.type in ["Brick and Mortar", "Stand", "Truck"] else 3,
-        key="r_type",
+        key=K("r_type"),
     )
-    address = st.text_input("Address", site.address, key="r_addr")
+    address = st.text_input("Address", site.address, key=K("r_addr"))
     c1, c2, c3 = st.columns(3)
-    phone = c1.text_input("Phone", site.phone, key="r_phone")
-    website = c2.text_input("Website", site.website, key="r_web")
-    instagram = c3.text_input("Instagram", site.instagram, key="r_ig")
-    facebook = st.text_input("Facebook", site.facebook, key="r_fb")
-    contact = st.text_input("Contact", site.contact, key="r_contact")
+    phone = c1.text_input("Phone", site.phone, key=K("r_phone"))
+    website = c2.text_input("Website", site.website, key=K("r_web"))
+    instagram = c3.text_input("Instagram", site.instagram, key=K("r_ig"))
+    facebook = st.text_input("Facebook", site.facebook, key=K("r_fb"))
+    contact = st.text_input("Contact", site.contact, key=K("r_contact"))
     c1, c2 = st.columns(2)
-    if "r_lat_geocoded" in st.session_state:
-        st.session_state["r_lat"] = st.session_state.pop("r_lat_geocoded")
-        st.session_state["r_lon"] = st.session_state.pop("r_lon_geocoded")
-    if "r_lat" not in st.session_state:
-        st.session_state["r_lat"] = site.lat_1 or 0.0
-    if "r_lon" not in st.session_state:
-        st.session_state["r_lon"] = site.lon_1 or 0.0
-    lat_1 = c1.number_input("Latitude", format="%.6f", key="r_lat")
-    lon_1 = c2.number_input("Longitude", format="%.6f", key="r_lon")
+    if K("r_lat_geocoded") in st.session_state:
+        st.session_state[K("r_lat")] = st.session_state.pop(K("r_lat_geocoded"))
+        st.session_state[K("r_lon")] = st.session_state.pop(K("r_lon_geocoded"))
+    if K("r_lat") not in st.session_state:
+        st.session_state[K("r_lat")] = site.lat_1 or 0.0
+    if K("r_lon") not in st.session_state:
+        st.session_state[K("r_lon")] = site.lon_1 or 0.0
+    lat_1 = c1.number_input("Latitude", format="%.6f", key=K("r_lat"))
+    lon_1 = c2.number_input("Longitude", format="%.6f", key=K("r_lon"))
     if st.button("📍 Geocode from Address"):
         if address:
             with st.spinner("Geocoding..."):
                 from src.description_gen import geocode_address
                 coords = geocode_address(address)
                 if coords:
-                    st.session_state["r_lat_geocoded"] = coords[0]
-                    st.session_state["r_lon_geocoded"] = coords[1]
+                    st.session_state[K("r_lat_geocoded")] = coords[0]
+                    st.session_state[K("r_lon_geocoded")] = coords[1]
                     st.success(f"Found: {coords[0]:.6f}, {coords[1]:.6f}")
                     st.rerun()
                 else:
@@ -131,24 +152,27 @@ with tab_menu:
         yes_key = f"{item}_yes"
         perc_key = f"{item}_perc"
         menu_flags[yes_key] = col.checkbox(
-            item.capitalize(), getattr(menu, yes_key), key=f"rev_menu_{yes_key}"
+            item.capitalize(), getattr(menu, yes_key), key=K(f"rev_menu_{yes_key}")
         )
         menu_percs[perc_key] = col.number_input(
             f"{item.capitalize()} prop", min_value=0.0, max_value=1.0,
             value=float(getattr(menu, perc_key) or 0.0),
             step=0.05, format="%.2f",
-            key=f"rev_menu_{perc_key}",
+            key=K(f"rev_menu_{perc_key}"),
         ) or None
     c1, c2 = st.columns(2)
+    # Stored values are lowercase (flour/corn/both); display capitalized.
+    _fc_opts = ["", "flour", "corn", "both"]
+    _fc_val = (menu.flour_corn or "").lower()
     flour_corn = c1.selectbox(
-        "Tortilla Type", ["", "Flour", "Corn", "Both"],
-        index=["", "Flour", "Corn", "Both"].index(menu.flour_corn)
-        if menu.flour_corn in ["", "Flour", "Corn", "Both"] else 0,
-        key="rev_fc",
+        "Tortilla Type", _fc_opts,
+        index=_fc_opts.index(_fc_val) if _fc_val in _fc_opts else 0,
+        format_func=lambda x: x.capitalize() if x else "—",
+        key=K("rev_fc"),
     )
-    handmade = c2.checkbox("Handmade Tortilla", menu.handmade_tortilla, key="rev_hm")
+    handmade = c2.checkbox("Handmade Tortilla", menu.handmade_tortilla, key=K("rev_hm"))
     specialty_text = st.text_area(
-        "Specialty Items (one per line)", "\n".join(menu.specialty_items), key="rev_spec"
+        "Specialty Items (one per line)", "\n".join(menu.specialty_items), key=K("rev_spec")
     )
 
 with tab_protein:
@@ -157,26 +181,26 @@ with tab_protein:
         st.markdown(f"**{prot.capitalize()}**")
         c_yes, c_perc = st.columns([2, 1])
         prot_data[f"{prot}_yes"] = c_yes.checkbox(
-            f"Serves {prot}", getattr(protein, f"{prot}_yes"), key=f"rev_prot_{prot}"
+            f"Serves {prot}", getattr(protein, f"{prot}_yes"), key=K(f"rev_prot_{prot}")
         )
         prot_data[f"{prot}_perc"] = c_perc.number_input(
             f"{prot.capitalize()} prop", min_value=0.0, max_value=1.0,
             value=float(getattr(protein, f"{prot}_perc") or 0.0),
             step=0.05, format="%.2f",
-            key=f"rev_prot_{prot}_perc",
+            key=K(f"rev_prot_{prot}_perc"),
         ) or None
         c1, c2, c3 = st.columns(3)
         prot_data[f"{prot}_style_1"] = c1.text_input(
-            "Style 1", getattr(protein, f"{prot}_style_1"), key=f"rev_prot_{prot}_s1"
+            "Style 1", getattr(protein, f"{prot}_style_1"), key=K(f"rev_prot_{prot}_s1")
         )
         prot_data[f"{prot}_style_2"] = c2.text_input(
-            "Style 2", getattr(protein, f"{prot}_style_2"), key=f"rev_prot_{prot}_s2"
+            "Style 2", getattr(protein, f"{prot}_style_2"), key=K(f"rev_prot_{prot}_s2")
         )
         prot_data[f"{prot}_style_3"] = c3.text_input(
-            "Style 3", getattr(protein, f"{prot}_style_3"), key=f"rev_prot_{prot}_s3"
+            "Style 3", getattr(protein, f"{prot}_style_3"), key=K(f"rev_prot_{prot}_s3")
         )
     protein_spec_text = st.text_area(
-        "Specialty Proteins (one per line)", "\n".join(protein.protein_specs), key="rev_prot_specs"
+        "Specialty Proteins (one per line)", "\n".join(protein.protein_specs), key=K("rev_prot_specs")
     )
 
 with tab_hours:
@@ -186,22 +210,22 @@ with tab_hours:
     for day, label in zip(days, day_labels):
         c1, c2 = st.columns(2)
         hrs_data[f"{day}_start"] = c1.text_input(
-            f"{label} Open", getattr(hours, f"{day}_start"), key=f"rev_hrs_{day}_s",
+            f"{label} Open", getattr(hours, f"{day}_start"), key=K(f"rev_hrs_{day}_s"),
             placeholder="e.g. 10:00 or 10am",
         )
         hrs_data[f"{day}_end"] = c2.text_input(
-            f"{label} Close", getattr(hours, f"{day}_end"), key=f"rev_hrs_{day}_e",
+            f"{label} Close", getattr(hours, f"{day}_end"), key=K(f"rev_hrs_{day}_e"),
             placeholder="e.g. 10:00 or 10pm",
         )
 
 with tab_salsa:
     c1, c2 = st.columns(2)
     total_num = c1.number_input(
-        "Total Salsas", value=salsa.total_num or 0, min_value=0, key="rev_salsa_total"
+        "Total Salsas", value=salsa.total_num or 0, min_value=0, key=K("rev_salsa_total")
     )
     heat_overall = c2.number_input(
         "Overall Heat (1–10)", min_value=1, max_value=10,
-        value=salsa.heat_overall or 1, key="rev_salsa_heat"
+        value=salsa.heat_overall or 1, key=K("rev_salsa_heat")
     ) or None
     sal_flags = {}
     salsa_types = ["verde", "rojo", "pico", "pickles", "chipotle", "avo", "molcajete", "macha"]
@@ -209,19 +233,19 @@ with tab_salsa:
     for i, s in enumerate(salsa_types):
         key = f"{s}_yes"
         sal_flags[key] = cols[i % 4].checkbox(
-            s.capitalize(), getattr(salsa, key), key=f"rev_salsa_{key}"
+            s.capitalize(), getattr(salsa, key), key=K(f"rev_salsa_{key}")
         )
     other_sal = {}
     for n in [1, 2, 3]:
         c1, c2 = st.columns(2)
         other_sal[f"other_{n}_name"] = c1.text_input(
-            f"Other {n} Name", getattr(salsa, f"other_{n}_name"), key=f"rev_salsa_o{n}_n"
+            f"Other {n} Name", getattr(salsa, f"other_{n}_name"), key=K(f"rev_salsa_o{n}_n")
         )
         other_sal[f"other_{n}_descrip"] = c2.text_input(
-            f"Other {n} Description", getattr(salsa, f"other_{n}_descrip"), key=f"rev_salsa_o{n}_d"
+            f"Other {n} Description", getattr(salsa, f"other_{n}_descrip"), key=K(f"rev_salsa_o{n}_d")
         )
     salsa_spec_text = st.text_area(
-        "Specialty Salsas (one per line)", "\n".join(salsa.salsa_specs), key="rev_salsa_specs"
+        "Specialty Salsas (one per line)", "\n".join(salsa.salsa_specs), key=K("rev_salsa_specs")
     )
 
 with tab_desc:
@@ -257,18 +281,18 @@ with tab_desc:
                     ),
                 )
                 short_gen, long_gen = generate_descriptions(current)
-                st.session_state["rev_sd"] = short_gen
-                st.session_state["rev_ld"] = long_gen
+                st.session_state[K("rev_sd")] = short_gen
+                st.session_state[K("rev_ld")] = long_gen
                 st.rerun()
             except Exception as e:
                 st.error(f"Description generation failed: {e}")
-    short_descrip = st.text_area("Short Description", desc.short_descrip, key="rev_sd")
-    long_descrip = st.text_area("Long Description", desc.long_descrip, key="rev_ld")
-    region = st.text_input("Region", desc.region, key="rev_reg")
+    short_descrip = st.text_area("Short Description", desc.short_descrip, key=K("rev_sd"))
+    long_descrip = st.text_area("Long Description", desc.long_descrip, key=K("rev_ld"))
+    region = st.text_input("Region", desc.region, key=K("rev_reg"))
 
 # --- Actions ---
 st.divider()
-notes = st.text_area("Notes", row.get("notes") or "", key="rev_notes")
+notes = st.text_area("Notes", row.get("notes") or "", key=K("rev_notes"))
 
 col1, col2, col3 = st.columns(3)
 

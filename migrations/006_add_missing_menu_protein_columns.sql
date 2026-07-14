@@ -23,9 +23,10 @@ ALTER TABLE menu
   ADD COLUMN IF NOT EXISTS specialty_item_2 text,
   ADD COLUMN IF NOT EXISTS specialty_item_3 text,
   ADD COLUMN IF NOT EXISTS specialty_item_4 text,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_1 integer,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_2 integer,
-  ADD COLUMN IF NOT EXISTS specialty_item_id_3 integer;
+  -- FK columns to item_spec; the live table names these spec_id_*, not specialty_item_id_*
+  ADD COLUMN IF NOT EXISTS spec_id_1 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_2 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_3 integer;
 
 ALTER TABLE protein
   ADD COLUMN IF NOT EXISTS chicken_perc numeric,
@@ -36,6 +37,7 @@ ALTER TABLE protein
   ADD COLUMN IF NOT EXISTS protein_spec_1 text,
   ADD COLUMN IF NOT EXISTS protein_spec_2 text,
   ADD COLUMN IF NOT EXISTS protein_spec_3 text,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_1 integer,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_2 integer,
-  ADD COLUMN IF NOT EXISTS protein_spec_id_3 integer;
+  -- FK columns to protein_spec; the live table names these spec_id_*, not protein_spec_id_*
+  ADD COLUMN IF NOT EXISTS spec_id_1 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_2 integer,
+  ADD COLUMN IF NOT EXISTS spec_id_3 integer;

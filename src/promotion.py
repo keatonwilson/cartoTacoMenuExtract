@@ -66,11 +66,22 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     for key, val in menu_data.items():
         if key in MENU_DB_COLUMNS:
             menu_row[key] = val
+    # Coerce null _perc values to 0.0 — DB columns have NOT NULL constraints
+    for key in MENU_DB_COLUMNS:
+        if key.endswith("_perc") and menu_row.get(key) is None:
+            menu_row[key] = 0.0
+    # Tortilla category is stored lowercase (flour/corn/both)
+    if menu_row.get("flour_corn"):
+        menu_row["flour_corn"] = menu_row["flour_corn"].lower()
     # Map specialty_items list to specialty_item_1..4 columns + resolve IDs
     specialty = menu_data.get("specialty_items", [])
     for i in range(1, 5):
         menu_row[f"specialty_item_{i}"] = specialty[i - 1] if i <= len(specialty) else None
-    # Look up item_spec IDs by name for columns 1..3
+    # Look up item_spec IDs by name for columns 1..3.
+    # NOTE: the live menu/protein/salsa tables store the FK in `spec_id_{i}`
+    # columns. The `specialty_item_id_*`/`protein_spec_id_*` columns named in
+    # migrations 006/009 were never applied to the database — do not rename
+    # these to match the migrations or promotion will break (PGRST204).
     for i in range(1, 4):
         name = menu_row.get(f"specialty_item_{i}")
         if name:

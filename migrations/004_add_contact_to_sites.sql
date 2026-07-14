@@ -1,2 +1,4 @@
--- Add contact field to sites table
-ALTER TABLE sites ADD COLUMN IF NOT EXISTS contact text;
+-- Historical / NOT applied to the live database — superseded by 009_master_schema.sql.
+-- The live sites table has no `contact` column; SiteData.contact is captured during
+-- extraction but is not promoted. Kept for history only.
+-- ALTER TABLE sites ADD COLUMN IF NOT EXISTS contact text;
