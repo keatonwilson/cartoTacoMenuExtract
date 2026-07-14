@@ -201,3 +201,42 @@ class ExtractedEstablishment(BaseModel):
     hours: HoursData = Field(default_factory=HoursData)
     salsa: SalsaData = Field(default_factory=SalsaData)
     description: DescriptionData = Field(default_factory=DescriptionData)
+
+
+class DiscoveredCandidate(BaseModel):
+    """A spot surfaced by city-wide discovery search, before deep scouting.
+
+    Just enough to decide whether it's worth a full scout_spot() run:
+    name, rough location, best source URL, and a one-line pitch.
+    """
+
+    name: str
+    area: str = Field(default="", description="Neighborhood, street, or address fragment")
+    url: str = Field(default="", description="Best source URL found for this spot")
+    note: str = Field(default="", description="One line on why it looks promising")
+    already_known: bool = Field(
+        default=False,
+        description="Set client-side when the name matches production or staging",
+    )
+
+
+class ScrapedSpot(BaseModel):
+    """Preliminary spot data scouted from the web (pending vetting).
+
+    Deliberately thin: no menu/protein/salsa — that data only enters through
+    the vetted menu-photo pipeline. Promoted to production as a `sites` row
+    with vetting_status='pending' plus descriptions/hours when present.
+    """
+
+    restaurant_name: str
+    site: SiteData = Field(default_factory=SiteData)
+    hours: HoursData = Field(default_factory=HoursData)
+    description: DescriptionData = Field(default_factory=DescriptionData)
+    confidence: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-section confidence: {'site'|'hours'|'description': 'high'|'medium'|'low'}",
+    )
+    evidence_urls: list[str] = Field(
+        default_factory=list,
+        description="Source URLs the data was gathered from (first becomes sites.source_url)",
+    )

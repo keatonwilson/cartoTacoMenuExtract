@@ -1,15 +1,16 @@
 """Staging table CRUD operations."""
 
 import uuid
+from src.config import EXTRACTION_MODEL
 from src.supabase_client import get_client
-from src.models import ExtractedEstablishment
+from src.models import ExtractedEstablishment, ScrapedSpot
 
 
 def save_extraction(
     extraction: ExtractedEstablishment,
     raw_json: dict,
     image_urls: list[str],
-    model: str = "claude-sonnet-4-20250514",
+    model: str = EXTRACTION_MODEL,
 ) -> str:
     """Save an extraction to the staging table. Returns the new row ID."""
     client = get_client()
@@ -29,12 +30,36 @@ def save_extraction(
     return result.data[0]["id"]
 
 
-def list_extractions(status: str | None = None) -> list[dict]:
-    """List staging extractions, optionally filtered by status."""
+def save_scraped_spot(spot: ScrapedSpot, raw_json: dict, model: str = EXTRACTION_MODEL) -> str:
+    """Save a web-scouted pending spot to the staging table. Returns the row ID.
+
+    menu/protein/salsa stay empty ({}) — pending spots have no vetted data, and
+    promotion skips those tables entirely for web_scrape rows.
+    """
+    client = get_client()
+    row = {
+        "restaurant_name": spot.restaurant_name,
+        "pipeline": "web_scrape",
+        "site_data": spot.site.model_dump(),
+        "hours_data": spot.hours.model_dump(),
+        "description_data": spot.description.model_dump(),
+        "source_urls": spot.evidence_urls,
+        "scrape_confidence": spot.confidence,
+        "extraction_model": model,
+        "raw_extraction": raw_json,
+    }
+    result = client.table("staging_extractions").insert(row).execute()
+    return result.data[0]["id"]
+
+
+def list_extractions(status: str | None = None, pipeline: str | None = None) -> list[dict]:
+    """List staging extractions, optionally filtered by status and/or pipeline."""
     client = get_client()
     query = client.table("staging_extractions").select("*").order("created_at", desc=True)
     if status:
         query = query.eq("status", status)
+    if pipeline:
+        query = query.eq("pipeline", pipeline)
     return query.execute().data
 
 

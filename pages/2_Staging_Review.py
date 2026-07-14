@@ -9,18 +9,28 @@ st.set_page_config(page_title="Staging Review", page_icon="📋", layout="wide")
 st.title("📋 Staging Review")
 
 # --- Filter & Select ---
-status_filter = st.selectbox(
+fc1, fc2 = st.columns(2)
+status_filter = fc1.selectbox(
     "Filter by status",
     ["pending_review", "approved", "rejected", "promoted", None],
     format_func=lambda x: x or "All",
 )
-rows = list_extractions(status_filter)
+pipeline_filter = fc2.selectbox(
+    "Filter by pipeline",
+    [None, "menu_photo", "web_scrape"],
+    format_func=lambda x: {None: "All", "menu_photo": "Menu photos", "web_scrape": "Scouted spots"}[x],
+)
+rows = list_extractions(status_filter, pipeline_filter)
 
 if not rows:
     st.info("No extractions found.")
     st.stop()
 
-options = {r["id"]: f"{r['restaurant_name']} ({r['status']}) — {r['created_at'][:10]}" for r in rows}
+options = {
+    r["id"]: f"{'🔭 ' if r.get('pipeline') == 'web_scrape' else ''}"
+             f"{r['restaurant_name']} ({r['status']}) — {r['created_at'][:10]}"
+    for r in rows
+}
 selected_id = st.selectbox("Select extraction", options.keys(), format_func=lambda x: options[x])
 
 # Every form widget key is namespaced to the selected record id. Streamlit keeps
@@ -44,6 +54,24 @@ for _k in list(st.session_state.keys()):
         del st.session_state[_k]
 
 row = get_extraction(selected_id)
+
+# Scouted (web_scrape) rows carry no menu/protein/salsa data by design —
+# those tabs below will show empty values and promotion skips those tables.
+if row.get("pipeline") == "web_scrape":
+    st.info(
+        "🔭 **Scouted spot** — promotes as a *pending (unvetted)* site. Only Site "
+        "Info, Hours, and Description are used; the menu/protein/salsa tabs are "
+        "ignored for this row."
+    )
+    if row.get("source_urls"):
+        st.markdown("**Sources:** " + " · ".join(f"[{u}]({u})" for u in row["source_urls"]))
+    conf = row.get("scrape_confidence") or {}
+    if conf:
+        icons = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+        st.markdown(
+            "**Confidence:** "
+            + " · ".join(f"{icons.get(v, '⚪')} {k}: {v}" for k, v in conf.items())
+        )
 
 # --- Source Images ---
 if row.get("source_image_urls"):

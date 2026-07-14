@@ -1,32 +1,34 @@
 # CartoTaco Menu Extract
 
-Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, extract structured data via Claude Vision, review/edit, then promote to the CartoTaco Supabase production database.
+Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, extract structured data via Claude Vision, review/edit, then promote to the CartoTaco Supabase production database. Also scouts **pending (unvetted) spots** from the web: Claude web_search gathers business details, the admin reviews/geocodes, and the spot promotes as a `sites` row with `vetting_status='pending'` until vetted via the normal menu-photo flow.
 
 ## Architecture
 
 - **Python + Streamlit** web app
-- **Claude Vision API** (claude-sonnet-4-20250514) for menu extraction
+- **Claude Vision API** (claude-sonnet-5) for menu extraction
 - **Supabase** for staging table + production tables + image storage
 
 ## Key Files
 
 - `src/extraction.py` — Claude Vision prompt + API call (core intelligence)
-- `src/models.py` — Pydantic models mirroring production DB schema
-- `src/staging.py` — Staging table CRUD
-- `src/promotion.py` — Staging → production upserts across 6 tables
+- `src/models.py` — Pydantic models mirroring production DB schema (+ `ScrapedSpot`/`DiscoveredCandidate` for scouted pending spots)
+- `src/scraping.py` — Web scouting for pending spots: Claude web_search → `ScrapedSpot`; city-wide discovery (`discover_candidates` diffs one search pass against production+staging names); duplicate detection (name + 150 m proximity + staging)
+- `src/staging.py` — Staging table CRUD (`save_scraped_spot` for the web_scrape pipeline)
+- `src/promotion.py` — Staging → production upserts across 6 tables; web_scrape rows take the pending path (sites+descriptions+hours only, `vetting_status='pending'`); menu-photo promotion into a pending est_id flips it to vetted; `list_pending_sites`/`retract_pending_site`/`mark_vetted`
 - `src/spec_tables.py` — CRUD for `item_spec` and `protein_spec` reference tables
-- `src/description_gen.py` — AI description generation (restaurants + spec entries)
+- `src/description_gen.py` — AI description generation (restaurants + spec entries), web enrichment, Nominatim geocoding
 - `pages/1_Upload_and_Extract.py` — Primary workflow: upload → extract → review → save
-- `pages/2_Staging_Review.py` — Browse/edit staging data, approve/reject
-- `pages/3_Promote.py` — Promote approved rows to production
+- `pages/2_Staging_Review.py` — Browse/edit staging data, approve/reject (pipeline filter; scouted rows show sources + confidence)
+- `pages/3_Promote.py` — Promote approved rows to production; pending-spots management (mark vetted / retract)
 - `pages/4_Spec_Tables.py` — CRUD UI for item_spec and protein_spec with AI descriptions
+- `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
 
 ## Production Database Schema (Supabase)
 
 All main tables keyed by `est_id`. Reference tables keyed by `id`.
 
 ### sites
-`est_id` (int, PK, NOT auto-generated), `name`, `type`, `address`, `phone`, `website`, `instagram`, `facebook`, `contact`, `lat_1` (float), `lon_1` (float), `days_loc_1`, `lat_2`, `lon_2`, `days_loc_2`, `last_updated`, `created_at`
+`est_id` (int, PK, NOT auto-generated), `name`, `type`, `address`, `phone`, `website`, `instagram`, `facebook`, `contact`, `lat_1` (float), `lon_1` (float), `days_loc_1`, `lat_2`, `lon_2`, `days_loc_2`, `last_updated`, `created_at`, `vetting_status` ('vetted'/'pending'), `source` ('editorial'/'web_scrape'/'user_submission'), `source_url`, `scraped_at`, `vetted_at`
 
 ### menu
 `est_id` (int, PK/FK), `burro_yes` (bool), `taco_yes`, `torta_yes`, `dog_yes`, `plate_yes`, `cocktail_yes`, `gordita_yes`, `huarache_yes`, `cemita_yes`, `flauta_yes`, `chalupa_yes`, `molote_yes`, `tostada_yes`, `enchilada_yes`, `tamale_yes`, `sope_yes`, `caldo_yes`, `burro_perc` (numeric), `taco_perc`, `torta_perc`, `dog_perc`, `plate_perc`, `cocktail_perc`, `gordita_perc`, `huarache_perc`, `cemita_perc`, `flauta_perc`, `chalupa_perc`, `molote_perc`, `tostada_perc`, `enchilada_perc`, `tamale_perc`, `sope_perc`, `caldo_perc`, `flour_corn`, `handmade_tortilla` (bool), `specialty_item_1`, `specialty_item_2`, `specialty_item_3`, `specialty_item_4`, `specialty_item_id_1` (FK→item_spec), `specialty_item_id_2`, `specialty_item_id_3`
@@ -50,7 +52,7 @@ All main tables keyed by `est_id`. Reference tables keyed by `id`.
 `id` (int, PK, serial), `name`, `short_descrip`, `long_descrip`, `origin`
 
 ### staging_extractions
-`id` (uuid, PK), `status`, `est_id`, `restaurant_name`, `site_data` (jsonb), `menu_data` (jsonb), `protein_data` (jsonb), `hours_data` (jsonb), `salsa_data` (jsonb), `description_data` (jsonb), `source_image_urls` (jsonb), `extraction_model`, `raw_extraction` (jsonb), `notes`, `created_at`, `updated_at`
+`id` (uuid, PK), `status`, `est_id`, `restaurant_name`, `site_data` (jsonb), `menu_data` (jsonb), `protein_data` (jsonb), `hours_data` (jsonb), `salsa_data` (jsonb), `description_data` (jsonb), `source_image_urls` (jsonb), `extraction_model`, `raw_extraction` (jsonb), `notes`, `created_at`, `updated_at`, `pipeline` ('menu_photo'/'web_scrape'), `source_urls` (jsonb), `scrape_confidence` (jsonb)
 
 ## Running
 
@@ -79,3 +81,6 @@ python -m pytest tests/
 - `heat_overall` is skipped in extraction (editorial/subjective)
 - Specialty item FKs left null — manual linking after promotion
 - Service role key only (admin tool, no public access)
+- Web scouting uses Claude's web_search tool (same pattern as `enrich_from_web`) — the app itself fetches nothing and descriptions are written original, never copied
+- Pending spots carry no menu/protein/salsa rows until vetted; the frontend's `sites_complete` LEFT JOINs tolerate the absence
+- Scouting migration: run `migrations/010_add_pipeline_to_staging.sql` (staging) and cartoTaco migrations 030/031 (production) before using page 5

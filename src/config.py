@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EXTRACTION_MODEL = "claude-sonnet-4-20250514"
+EXTRACTION_MODEL = "claude-sonnet-5"
 MAX_IMAGE_DIMENSION = 1500
 
 
