@@ -56,12 +56,13 @@ for _k in list(st.session_state.keys()):
 row = get_extraction(selected_id)
 
 # Scouted (web_scrape) rows carry no menu/protein/salsa data by design —
-# those tabs below will show empty values and promotion skips those tables.
+# unless the admin hand-fills those tabs, which upgrades promotion to the
+# full six-table path (and vets a pending target).
 if row.get("pipeline") == "web_scrape":
     st.info(
-        "🔭 **Scouted spot** — promotes as a *pending (unvetted)* site. Only Site "
-        "Info, Hours, and Description are used; the menu/protein/salsa tabs are "
-        "ignored for this row."
+        "🔭 **Scouted spot** — promotes as a *pending (unvetted)* site using Site "
+        "Info, Hours, and Description only. If you fill in the Menu/Proteins tabs "
+        "and save, promotion writes all tables and vets the spot instead."
     )
     if row.get("source_urls"):
         st.markdown("**Sources:** " + " · ".join(f"[{u}]({u})" for u in row["source_urls"]))

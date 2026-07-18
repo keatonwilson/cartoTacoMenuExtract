@@ -3,6 +3,7 @@ from src.staging import list_extractions
 from src.promotion import (
     promote,
     find_sites_by_name,
+    has_menu_data,
     list_pending_sites,
     retract_pending_site,
     mark_vetted,
@@ -25,7 +26,8 @@ else:
     selected_id = st.selectbox("Select approved extraction", options.keys(), format_func=lambda x: options[x])
 
     row = next(r for r in rows if r["id"] == selected_id)
-    is_scouted = row.get("pipeline") == "web_scrape"
+    # Scouted rows with hand-filled menu data take the full (vetting) path
+    is_scouted = row.get("pipeline") == "web_scrape" and not has_menu_data(row)
 
     # Show summary
     st.markdown(f"**Restaurant:** {row['restaurant_name']}")

@@ -30,6 +30,12 @@ def _next_est_id(client) -> int:
     return (max_row[0]["est_id"] + 1) if max_row else 1
 
 
+def has_menu_data(row: dict) -> bool:
+    """True when the admin filled in menu/protein tabs on a scouted row."""
+    merged = {**(row.get("menu_data") or {}), **(row.get("protein_data") or {})}
+    return any(v for k, v in merged.items() if k.endswith("_yes"))
+
+
 def promote(row_id: str, est_id: int | None = None) -> int:
     """Promote a staging row to production.
 
@@ -37,16 +43,17 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     Otherwise upserts into the existing est_id.
 
     web_scrape rows take the pending path (_promote_scraped): sites row with
-    vetting_status='pending' plus descriptions/hours only. menu_photo rows
-    write all six tables, and promoting into a pending est_id flips it to
-    vetted (the vetting loop).
+    vetting_status='pending' plus descriptions/hours only — unless the admin
+    hand-filled the menu/protein tabs, in which case the row takes the full
+    six-table path like a menu_photo row. Full promotion into a pending
+    est_id flips it to vetted (the vetting loop).
 
     Returns the est_id used.
     """
     client = get_client()
     row = get_extraction(row_id)
 
-    if row.get("pipeline") == "web_scrape":
+    if row.get("pipeline") == "web_scrape" and not has_menu_data(row):
         return _promote_scraped(client, row_id, row, est_id)
 
     site_data = row["site_data"]

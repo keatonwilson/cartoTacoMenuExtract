@@ -220,6 +220,26 @@ def test_scraped_promotion_skips_empty_hours_and_descriptions():
     assert client.written_tables() == {"sites"}
 
 
+def test_scraped_row_with_hand_filled_menu_takes_full_path_and_vets():
+    # Admin hand-entered menu/protein data on a scouted row: promotion must
+    # write all six tables and flip the pending target to vetted.
+    row = scraped_row()
+    row["menu_data"] = {"quesadilla_yes": True, "quesadilla_perc": 1.0, "specialty_items": []}
+    row["protein_data"] = {"chicken_yes": True, "chicken_perc": 1.0, "protein_specs": []}
+    row["salsa_data"] = {"total_num": 2, "salsa_specs": []}
+    client = FakeClient(select_data={"sites": [{"est_id": 21, "vetting_status": "pending"}]})
+    with patch("src.promotion.get_client", return_value=client), \
+         patch("src.promotion.get_extraction", return_value=row), \
+         patch("src.promotion.set_status"):
+        est_id = promote("row-1", est_id=21)
+
+    assert est_id == 21
+    assert client.written_tables() == {"sites", "menu", "protein", "hours", "salsa", "descriptions"}
+    site = client.write_for("sites")
+    assert site["vetting_status"] == "vetted"
+    assert client.write_for("menu")["quesadilla_yes"] is True
+
+
 # --- Promotion: menu_photo path + vetting flip ---
 
 def test_menu_photo_promotion_flips_pending_to_vetted():
