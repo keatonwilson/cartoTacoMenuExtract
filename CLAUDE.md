@@ -15,13 +15,15 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `src/scraping.py` — Web scouting for pending spots: Claude web_search → `ScrapedSpot`; city-wide discovery (`discover_candidates` diffs one search pass against production+staging names); duplicate detection (name + 150 m proximity + staging)
 - `src/staging.py` — Staging table CRUD (`save_scraped_spot` for the web_scrape pipeline)
 - `src/promotion.py` — Staging → production upserts across 6 tables; web_scrape rows take the pending path (sites+descriptions+hours only, `vetting_status='pending'`); menu-photo promotion into a pending est_id flips it to vetted; `list_pending_sites`/`retract_pending_site`/`mark_vetted`
-- `src/spec_tables.py` — CRUD for `item_spec` and `protein_spec` reference tables
+- `src/spec_tables.py` — CRUD for `item_spec` and `protein_spec` reference tables; `normalize_spec_name`/`resolve_spec_id` spec name matching (mirrors cartoTaco migration 034's SQL — keep in sync)
+- `src/data_health.py` — wrappers for cartoTaco migration 034: `data_health_report()`, `heal_spec_links()`, `heal_log`
 - `src/description_gen.py` — AI description generation (restaurants + spec entries), web enrichment, Nominatim geocoding
 - `pages/1_Upload_and_Extract.py` — Primary workflow: upload → extract → review → save
 - `pages/2_Staging_Review.py` — Browse/edit staging data, approve/reject (pipeline filter; scouted rows show sources + confidence)
 - `pages/3_Promote.py` — Promote approved rows to production; pending-spots management (mark vetted / retract)
 - `pages/4_Spec_Tables.py` — CRUD UI for item_spec and protein_spec with AI descriptions
 - `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
+- `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes
 
 ## Production Database Schema (Supabase)
 
@@ -79,7 +81,7 @@ python -m pytest tests/
 - Staging uses single table with JSONB columns (simpler than 6 mirror tables)
 - `_perc` fields are AI-estimated proportions (0.0-1.0, summing to 1.0) for menu item and protein prominence
 - `heat_overall` is skipped in extraction (editorial/subjective)
-- Specialty item FKs left null — manual linking after promotion
+- Specialty spec ids (`spec_id_N`) link at promotion by normalized name (exactly one match) for items, proteins and salsas. An unresolved name leaves any existing link untouched; an empty slot clears it. cartoTaco migration 034's triggers back-link later (e.g. when the spec is created on page 4), and the Data Health page lists what still needs a human
 - Service role key only (admin tool, no public access)
 - Web scouting uses Claude's web_search tool (same pattern as `enrich_from_web`) — the app itself fetches nothing and descriptions are written original, never copied
 - Pending spots carry no menu/protein/salsa rows until vetted; the frontend's `sites_complete` LEFT JOINs tolerate the absence
