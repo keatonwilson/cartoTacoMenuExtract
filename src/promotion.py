@@ -1,5 +1,6 @@
 """Promote approved staging rows to production tables."""
 
+import re
 from datetime import datetime, timezone
 
 from src.supabase_client import get_client
@@ -13,12 +14,22 @@ def get_all_sites() -> list[dict]:
 
 
 def find_sites_by_name(name: str) -> list[dict]:
-    """Return sites whose name closely matches the given string (case-insensitive)."""
+    """Return sites whose name closely matches the given string (case-insensitive).
+
+    Matches on the first two words rather than the whole string: the same spot
+    gets written down as "El Tacoson Truck", "El Tacoson Asada & Pastor" and
+    "El Tacoson - Asada & Pastor", and a full-substring match finds none of
+    them from the others. Looser matching is safe here — the caller shows the
+    hits in a picker for a human to choose from.
+    """
+    words = re.findall(r"\w+", name)[:2]
+    if not words:
+        return []
     client = get_client()
     return (
         client.table("sites")
         .select("est_id, name, address, vetting_status")
-        .ilike("name", f"%{name}%")
+        .ilike("name", f"%{' '.join(words)}%")
         .execute()
         .data
     )
