@@ -329,6 +329,11 @@ def geocode_address(address: str) -> tuple[float, float] | None:
     import urllib.request
     import urllib.parse
 
+    # ponytail: menu-extracted addresses often omit the city; this is a
+    # Tucson-only guide, so assume Tucson when no state/zip is present.
+    if not re.search(r"\bAZ\b|\d{5}", address):
+        address = f"{address}, Tucson, AZ"
+
     query = urllib.parse.urlencode({
         "q": address,
         "format": "json",
@@ -342,8 +347,9 @@ def geocode_address(address: str) -> tuple[float, float] | None:
             data = json.loads(resp.read().decode())
             if data:
                 return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception:
-        pass
+            print(f"geocode: no match for {address!r}")
+    except Exception as e:
+        print(f"geocode failed for {address!r}: {type(e).__name__}: {e}")
     return None
 
 
