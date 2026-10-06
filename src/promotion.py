@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from src.supabase_client import get_client
+from src.spec_tables import build_spec_index, resolve_spec_id
 from src.staging import get_extraction, set_status
 
 
@@ -119,18 +120,12 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     specialty = menu_data.get("specialty_items", [])
     for i in range(1, 5):
         menu_row[f"specialty_item_{i}"] = specialty[i - 1] if i <= len(specialty) else None
-    # Look up item_spec IDs by name for columns 1..3.
+    # Link item_spec ids for columns 1..3 (see _link_specs).
     # NOTE: the live menu/protein/salsa tables store the FK in `spec_id_{i}`
     # columns. The `specialty_item_id_*`/`protein_spec_id_*` columns named in
     # migrations 006/009 were never applied to the database — do not rename
     # these to match the migrations or promotion will break (PGRST204).
-    for i in range(1, 4):
-        name = menu_row.get(f"specialty_item_{i}")
-        if name:
-            result = client.table("item_spec").select("id").eq("name", name).limit(1).execute().data
-            menu_row[f"spec_id_{i}"] = result[0]["id"] if result else None
-        else:
-            menu_row[f"spec_id_{i}"] = None
+    _link_specs(client, menu_row, "specialty_item_", "item_spec", 3)
     client.table("menu").upsert(menu_row, on_conflict="est_id").execute()
 
     # --- Protein ---
@@ -150,14 +145,7 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     prot_specs = protein_data.get("protein_specs", [])
     for i in range(1, 4):
         prot_row[f"protein_spec_{i}"] = prot_specs[i - 1] if i <= len(prot_specs) else None
-    # Look up protein_spec IDs by name
-    for i in range(1, 4):
-        name = prot_row.get(f"protein_spec_{i}")
-        if name:
-            result = client.table("protein_spec").select("id").eq("name", name).limit(1).execute().data
-            prot_row[f"spec_id_{i}"] = result[0]["id"] if result else None
-        else:
-            prot_row[f"spec_id_{i}"] = None
+    _link_specs(client, prot_row, "protein_spec_", "protein_spec", 3)
     client.table("protein").upsert(prot_row, on_conflict="est_id").execute()
 
     # --- Hours ---
@@ -180,6 +168,7 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     salsa_spec_list = salsa_data.get("salsa_specs", [])
     for i in range(1, 3):
         salsa_row[f"salsa_spec_{i}"] = salsa_spec_list[i - 1] if i <= len(salsa_spec_list) else None
+    _link_specs(client, salsa_row, "salsa_spec_", "salsa_spec", 2)
     client.table("salsa").upsert(salsa_row, on_conflict="est_id").execute()
 
     # --- Descriptions ---
@@ -195,6 +184,29 @@ def promote(row_id: str, est_id: int | None = None) -> int:
     set_status(row_id, "promoted")
 
     return est_id
+
+
+def _link_specs(client, row: dict, name_prefix: str, spec_table: str, slots: int) -> None:
+    """Fill spec_id_N on a menu/protein/salsa upsert row from its name slots.
+
+    - name resolves (normalized, exactly one match) -> link it
+    - name present but unresolved -> omit spec_id_N so the upsert leaves any
+      existing (hand-made) link alone; on a fresh row the database trigger
+      from cartoTaco migration 034 retries, and back-links once the spec
+      is created
+    - slot empty -> clear the link (the special is gone)
+    """
+    index = build_spec_index(client, spec_table)
+    linked: list[int] = []
+    for i in range(1, slots + 1):
+        name = row.get(f"{name_prefix}{i}")
+        if not name:
+            row[f"spec_id_{i}"] = None
+            continue
+        spec_id = resolve_spec_id(index, name)
+        if spec_id is not None and spec_id not in linked:
+            row[f"spec_id_{i}"] = spec_id
+            linked.append(spec_id)
 
 
 def _promote_scraped(client, row_id: str, row: dict, est_id: int | None) -> int:
