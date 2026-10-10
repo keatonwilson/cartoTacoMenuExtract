@@ -321,36 +321,72 @@ def enrich_from_web(restaurant_name: str, current_address: str = "") -> Enrichme
 
 # --- Geocoding ---
 
-def geocode_address(address: str) -> tuple[float, float] | None:
-    """Geocode an address to (lat, lon) using OpenStreetMap Nominatim.
+def _clean_address(address: str) -> str:
+    """Drop the parts of an address geocoders choke on: suite/unit numbers and
+    parenthetical notes like "(Golden Nugget Tavern)"."""
+    address = re.sub(r"\([^)]*\)", "", address)
+    address = re.sub(
+        r",?\s*(?:(?:Ste|Suite|Unit|Apt|Bldg)\.?\s*#?\s*|#\s*)[\w-]+",
+        "", address, flags=re.I,
+    )
+    return re.sub(r"\s+,", ",", re.sub(r"\s{2,}", " ", address)).strip()
 
-    Returns (lat, lon) tuple or None if not found.
-    """
+
+def _fetch_json(url: str):
     import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "CartoTacoMenuExtract/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def geocode_address(address: str) -> tuple[float, float] | None:
+    """Geocode an address to (lat, lon).
+
+    Tries OpenStreetMap Nominatim, then the US Census geocoder. Returns
+    (lat, lon) or None if neither finds it.
+    """
     import urllib.parse
 
+    address = _clean_address(address)
     # ponytail: menu-extracted addresses often omit the city; this is a
     # Tucson-only guide, so assume Tucson when no state/zip is present.
     if not re.search(r"\bAZ\b|\d{5}", address):
         address = f"{address}, Tucson, AZ"
 
-    query = urllib.parse.urlencode({
-        "q": address,
-        "format": "json",
-        "limit": 1,
-    })
-    url = f"https://nominatim.openstreetmap.org/search?{query}"
-    req = urllib.request.Request(url, headers={"User-Agent": "CartoTacoMenuExtract/1.0"})
+    road_match = None
+    try:
+        query = urllib.parse.urlencode({"q": address, "format": "json", "limit": 1})
+        data = _fetch_json(f"https://nominatim.openstreetmap.org/search?{query}")
+        if data:
+            coords = float(data[0]["lat"]), float(data[0]["lon"])
+            # A "highway" hit is the midpoint of the whole street, which can be
+            # kilometers from the address — only use it if nothing better turns up.
+            if data[0].get("class") != "highway":
+                return coords
+            road_match = coords
+    except Exception as e:
+        print(f"geocode (nominatim) failed for {address!r}: {type(e).__name__}: {e}")
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            if data:
-                return float(data[0]["lat"]), float(data[0]["lon"])
-            print(f"geocode: no match for {address!r}")
+        query = urllib.parse.urlencode({
+            "address": address.replace("ñ", "n").replace("Ñ", "N"),
+            "benchmark": "Public_AR_Current",
+            "format": "json",
+        })
+        matches = _fetch_json(
+            f"https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?{query}"
+        )["result"]["addressMatches"]
+        if matches:
+            return matches[0]["coordinates"]["y"], matches[0]["coordinates"]["x"]
     except Exception as e:
-        print(f"geocode failed for {address!r}: {type(e).__name__}: {e}")
-    return None
+        print(f"geocode (census) failed for {address!r}: {type(e).__name__}: {e}")
+
+    if road_match:
+        print(f"geocode: only a street-level match for {address!r}")
+    else:
+        print(f"geocode: no match for {address!r}")
+    return road_match
 
 
 # --- Spec Table Descriptions ---
