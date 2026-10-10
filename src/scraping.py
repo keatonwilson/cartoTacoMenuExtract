@@ -81,14 +81,15 @@ def scout_spot(name: str, hint_urls: list[str] | None = None) -> tuple[ScrapedSp
             f"- {u}" for u in hint_urls
         )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
-    response = client.messages.create(
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=600.0)
+    with client.messages.stream(
         model=EXTRACTION_MODEL,
         max_tokens=16000,
         system=SCOUT_SYSTEM_PROMPT + schema_json,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
-    )
+    ) as stream:
+        response = stream.get_final_message()
 
     raw_text = _extract_text_from_response(response)
     raw_dict = _extract_json(raw_text)
@@ -220,14 +221,17 @@ def discover_candidates(limit: int = 20, focus: str = "") -> tuple[list[Discover
         f"- {n}" for n in known_names
     )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
-    response = client.messages.create(
+    # ponytail: streaming only to dodge the SDK's 10-min non-streaming cap —
+    # discovery runs many web searches and blows past a single-shot timeout.
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=600.0)
+    with client.messages.stream(
         model=EXTRACTION_MODEL,
         max_tokens=16000,
         system=DISCOVER_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
-    )
+    ) as stream:
+        response = stream.get_final_message()
 
     raw_text = _extract_text_from_response(response)
     raw_dict = _clean_strings(_extract_json(raw_text))
