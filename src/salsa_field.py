@@ -10,12 +10,12 @@ calls are thin wrappers around them.
 """
 
 import base64
+import hashlib
 import io
 import json
 import math
 import re
 import unicodedata
-import uuid
 from datetime import datetime
 from statistics import median
 
@@ -326,10 +326,15 @@ def update_style(style_id: int, data: dict) -> dict:
 
 
 def upload_photo(jpeg_bytes: bytes, folder: str) -> str:
-    """Upload to the public `salsas` bucket and return the public URL."""
+    """Upload to the public `salsas` bucket and return the public URL.
+
+    The path is the hash of the image, and the upload overwrites: retrying a
+    failed save, or clicking Save twice, reuses one object instead of leaving
+    a new orphan in the bucket each time.
+    """
     client = get_client()
-    path = f"{folder}/{uuid.uuid4().hex}.jpg"
-    client.storage.from_(BUCKET).upload(path, jpeg_bytes, {"content-type": "image/jpeg"})
+    path = f"{folder}/{hashlib.sha256(jpeg_bytes).hexdigest()[:32]}.jpg"
+    client.storage.from_(BUCKET).upload(path, jpeg_bytes, {"content-type": "image/jpeg", "upsert": "true"})
     return client.storage.from_(BUCKET).get_public_url(path)
 
 

@@ -170,6 +170,13 @@ with tab_new:
             new_name = c1.text_input("Name", placeholder="Salsa de …")
             new_family = c2.selectbox("Family", sf.FAMILIES)
             new_region = c3.selectbox("Region", sf.REGIONS)
+            # A "new" name that is already in the catalog is that style. Switch to
+            # it now, before the inputs below, so they prefill from the spot's
+            # existing link instead of saving defaults over it.
+            match = next((s for s in styles if new_name and s["slug"] == sf.slugify(new_name)), None)
+            if match:
+                st.info(f"That name matches {style_label(match)}, so this sighting will be saved to it.")
+                choice = match
 
         # If this spot already has a link to this style, start from what is
         # recorded there: saving replaces heat, house name and note, so blank

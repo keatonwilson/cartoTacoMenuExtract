@@ -255,6 +255,26 @@ def test_draft_style_reuses_an_existing_slug(monkeypatch):
     assert sf.draft_style_from_sighting("Salsa Verde", "cooked", "central", ["#7a9a2e"], None) == STYLE
 
 
+def test_upload_photo_reuses_one_object_per_image(monkeypatch):
+    """Retries and double clicks must not pile up orphaned copies in the bucket."""
+    uploads = []
+
+    class Bucket:
+        def upload(self, path, data, options):
+            uploads.append((path, options))
+
+        def get_public_url(self, path):
+            return f"https://example.test/{path}"
+
+    client = type("C", (), {"storage": type("S", (), {"from_": lambda self, name: Bucket()})()})()
+    monkeypatch.setattr(sf, "get_client", lambda: client)
+
+    first = sf.upload_photo(b"same-bytes", "sightings/6")
+    assert sf.upload_photo(b"same-bytes", "sightings/6") == first
+    assert sf.upload_photo(b"other-bytes", "sightings/6") != first
+    assert uploads[0][0] == uploads[1][0] and uploads[0][1]["upsert"] == "true"
+
+
 def test_page_explains_missing_tables(monkeypatch):
     def boom():
         raise RuntimeError("relation salsa_styles does not exist")
