@@ -175,8 +175,12 @@ def _extract_json(text: str) -> dict:
 
 def _web_search_tools() -> list[dict]:
     """Return the web_search tool config shared by description gen and enrichment."""
+    # ponytail: basic web_search, not _20260209 — the newer variant runs dynamic
+    # filtering through a code-execution sandbox, and when that sandbox errors the
+    # model answers "all tools are temporarily unavailable" instead of JSON.
+    # Upgrade back if we ever need result filtering on large search fan-outs.
     return [{
-        "type": "web_search_20260209",
+        "type": "web_search_20250305",
         "name": "web_search",
         "max_uses": 5,
         "user_location": {
@@ -209,14 +213,15 @@ def generate_descriptions(ext: ExtractedEstablishment) -> tuple[str, str]:
         f"\"{ext.restaurant_name}\" in Tucson, AZ. Then write the short and long descriptions."
     )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
-    response = client.messages.create(
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=90.0)
+    with client.messages.stream(
         model=EXTRACTION_MODEL,
         max_tokens=16000,
         system=SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
-    )
+    ) as stream:
+        response = stream.get_final_message()
 
     raw_text = _extract_text_from_response(response)
     result = _extract_json(raw_text)
@@ -289,14 +294,15 @@ def enrich_from_web(restaurant_name: str, current_address: str = "") -> Enrichme
         f"I need: address, phone, website, Instagram, Facebook, and operating hours."
     )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
-    response = client.messages.create(
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=90.0)
+    with client.messages.stream(
         model=EXTRACTION_MODEL,
         max_tokens=16000,
         system=ENRICH_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
-    )
+    ) as stream:
+        response = stream.get_final_message()
 
     raw_text = _extract_text_from_response(response)
     data = _extract_json(raw_text)
@@ -435,14 +441,15 @@ def generate_spec_descriptions(name: str, origin: str, spec_type: str) -> tuple[
         f"Then write the short and long descriptions."
     )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
-    response = client.messages.create(
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=90.0)
+    with client.messages.stream(
         model=EXTRACTION_MODEL,
         max_tokens=16000,
         system=SPEC_DESCRIPTION_SYSTEM_PROMPT,
         tools=_web_search_tools(),
         messages=[{"role": "user", "content": user_message}],
-    )
+    ) as stream:
+        response = stream.get_final_message()
 
     raw_text = _extract_text_from_response(response)
     result = _extract_json(raw_text)

@@ -106,7 +106,7 @@ def extract_from_images(
         }
     )
 
-    client = anthropic.Anthropic(api_key=get_anthropic_key())
+    client = anthropic.Anthropic(api_key=get_anthropic_key(), timeout=90.0)
     response = client.messages.create(
         model=EXTRACTION_MODEL,
         # Adaptive thinking (on by default) spends output tokens before the
