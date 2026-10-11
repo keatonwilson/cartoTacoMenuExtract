@@ -8,6 +8,7 @@ An internal admin tool for [CartoTaco](https://github.com/keatonwilson/cartoTaco
 2. **Staging Review** — Browse, edit, and approve/reject extracted data before it hits production. Includes web enrichment (auto-fills phone, address, hours from the web) and AI description generation.
 3. **Promote** — Push approved extractions into the CartoTaco production database across 6 tables.
 4. **Spec Tables** — Manage `item_spec` and `protein_spec` global reference tables with CRUD UI and AI-generated descriptions.
+5. **Salsa Field Notes** — Turn a photo taken at a spot into a Salsa Atlas sighting: the spot is suggested from the photo's GPS, colours are sampled after white-balancing against a grey card, and new salsa styles are saved as drafts until published. Needs cartoTaco migrations 036–038.
 
 ## Tech Stack
 

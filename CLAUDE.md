@@ -24,6 +24,8 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/4_Spec_Tables.py` — CRUD UI for item_spec and protein_spec with AI descriptions
 - `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
 - `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes
+- `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES` mirror that migration's CHECK constraints — keep in sync
+- `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: edit/remove; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
 ## Production Database Schema (Supabase)
 
@@ -77,6 +79,9 @@ python -m pytest tests/
 ```
 
 ## Design Decisions
+
+- Salsa sightings skip the staging table: there is one curator, so a sighting saves straight to `site_salsas`. The safety net is `salsa_styles.status` — a new style is a `draft` and invisible on the public site until published. `save_sighting` never sends `synced`, so links created by cartoTaco's sync stay synced and new ones are hand-made
+- Photos go to the public `salsas` bucket (created by cartoTaco migration 036) as white-balanced JPEGs
 
 - Staging uses single table with JSONB columns (simpler than 6 mirror tables)
 - `_perc` fields are AI-estimated proportions (0.0-1.0, summing to 1.0) for menu item and protein prominence
