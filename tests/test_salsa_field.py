@@ -101,15 +101,31 @@ def test_read_photo_meta_without_exif():
     assert sf.read_photo_meta(b"not an image")["lat"] is None
 
 
-def test_nearest_sites_orders_by_distance_and_skips_unplaced():
+def test_read_photo_meta_ignores_gps_without_a_fix():
+    """0/0 rationals (no GPS fix) become NaN in Pillow; they must not reach the distance maths."""
+    from PIL.TiffImagePlugin import IFDRational
+
+    nan = IFDRational(0, 0)
+    for lat in ((nan, nan, nan), (132.0, 0.0, 0.0)):  # NaN, and out of range
+        exif = Image.Exif()
+        gps = exif.get_ifd(0x8825)
+        gps[1], gps[2] = "N", lat
+        gps[3], gps[4] = "W", (110.0, 58.0, 12.0)
+        meta = sf.read_photo_meta(_jpeg(_scene(), exif))
+        assert meta["lat"] is None and meta["lon"] is None
+
+
+def test_nearest_sites_orders_by_distance_and_keeps_unplaced_last():
     sites = [
         {"est_id": 1, "name": "Far", "lat_1": 32.30, "lon_1": -110.90},
         {"est_id": 2, "name": "Near", "lat_1": 32.2221, "lon_1": -110.9701},
         {"est_id": 3, "name": "Unplaced", "lat_1": None, "lon_1": None},
     ]
     ranked = sf.nearest_sites(sites, 32.222, -110.97)
-    assert [s["name"] for s in ranked] == ["Near", "Far"]
+    # unplaced sites can't be ranked but must stay selectable, so they come last
+    assert [s["name"] for s in ranked] == ["Near", "Far", "Unplaced"]
     assert ranked[0]["distance_m"] < 50
+    assert ranked[2]["distance_m"] is None
 
 
 def test_slugify_matches_atlas_slugs():
@@ -136,6 +152,13 @@ def test_parse_locate_response():
     assert bad["card_box"] == (0.0, 0.0, 1.0, 1.0)
     assert bad["style_slug"] is None
     assert sf.parse_locate_response("sorry, no", [])["salsa_box"] == sf.DEFAULT_SALSA_BOX
+
+    # Valid JSON of the wrong shape, a bare fence, and non-finite numbers
+    for junk in ("[]", "null", '"text"', "```", "```json", '{"chunk": NaN, "salsa_box": [NaN, 0, 1, 1]}',
+                 '{"chunk": true, "visible_ingredients": "seeds"}'):
+        parsed = sf.parse_locate_response(junk, ["verde"])
+        assert parsed["salsa_box"] == sf.DEFAULT_SALSA_BOX, junk
+        assert parsed["chunk"] is None and parsed["visible_ingredients"] == [], junk
 
 
 def test_remove_sighting_clears_synced_links_and_deletes_hand_made_ones(monkeypatch):
@@ -192,6 +215,44 @@ def test_page_renders_with_data(monkeypatch):
     at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
     assert not at.exception, at.exception
     assert len(at.tabs) == 3
+
+
+def _run_page(monkeypatch, links, styles=None):
+    saves = []
+    monkeypatch.setattr(sf, "list_sites", lambda: [{"est_id": 6, "name": "Tacos Apson", "lat_1": 32.2, "lon_1": -110.9}])
+    monkeypatch.setattr(sf, "list_styles", lambda: styles or [STYLE])
+    monkeypatch.setattr(sf, "list_sightings", lambda: links)
+    monkeypatch.setattr(sf, "save_sighting", lambda est, style, fields: saves.append(fields))
+    monkeypatch.setattr(sf, "update_style", lambda style_id, data: saves.append(data))
+    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    assert not at.exception, at.exception
+    return at, saves
+
+
+def test_saving_a_sighting_keeps_a_heat_of_zero(monkeypatch):
+    """Editing only the note on a link whose heat is 0 must not turn the heat into 5."""
+    at, saves = _run_page(monkeypatch, [{**LINK, "heat": 0, "photo_url": "https://example.test/p.jpg"}])
+    next(b for b in at.button if b.key == "link_6_1_save").click().run()
+    assert saves[0]["heat"] == 0
+
+
+def test_saving_a_draft_style_leaves_unset_heat_unset(monkeypatch):
+    draft = {**STYLE, "status": "draft", "heat_min": None, "heat_max": None}
+    at, saves = _run_page(monkeypatch, [], styles=[draft])
+    next(b for b in at.button if b.key == "style_1_save").click().run()
+    assert saves[0]["heat_min"] is None and saves[0]["heat_max"] is None
+
+
+def test_draft_style_reuses_an_existing_slug(monkeypatch):
+    """A retry after a failed save must not trip the slug UNIQUE constraint."""
+    class Query:
+        def select(self, *_): return self
+        def eq(self, *_): return self
+        def insert(self, *_): raise AssertionError("must not insert a duplicate slug")
+        def execute(self): return type("R", (), {"data": [STYLE]})()
+
+    monkeypatch.setattr(sf, "get_client", lambda: type("C", (), {"table": lambda self, name: Query()})())
+    assert sf.draft_style_from_sighting("Salsa Verde", "cooked", "central", ["#7a9a2e"], None) == STYLE
 
 
 def test_page_explains_missing_tables(monkeypatch):

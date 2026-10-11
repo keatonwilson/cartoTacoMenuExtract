@@ -17,10 +17,22 @@ st.caption(
 try:
     sites = sf.list_sites()
     styles = sf.list_styles()
+    links = sf.list_sightings()
 except Exception as e:
     st.error(f"Could not load sites and salsa styles: {e}")
     st.info("The Salsa Atlas tables come from cartoTaco migrations 036–038. Have they reached this database?")
     st.stop()
+
+# A message from the save that triggered this rerun (st.success would be wiped by it)
+if flash := st.session_state.pop("flash", None):
+    st.success(flash)
+
+
+def saved(message: str) -> None:
+    """Reload the page with fresh data and show `message` once it has."""
+    st.session_state["flash"] = message
+    st.rerun()
+
 
 NEW_STYLE = "➕ New style (saved as a draft)"
 
@@ -59,6 +71,8 @@ with tab_new:
         except Exception as e:
             st.error(f"Could not read that image ({e}). For HEIC photos, run `pip install pillow-heif`.")
             st.stop()
+        # Work at the size the photo is stored at, so every slider tick is quick
+        photo.thumbnail((sf.PHOTO_MAX_DIM, sf.PHOTO_MAX_DIM))
         meta = sf.read_photo_meta(raw)
 
         # A new photo resets the regions found for the last one
@@ -76,9 +90,12 @@ with tab_new:
                 ranked = sf.nearest_sites(sites, meta["lat"], meta["lon"])
                 st.caption("Spots ordered by distance from where the photo was taken.")
                 site = st.selectbox(
-                    "Spot", ranked, format_func=lambda s: f"{s['name']} · {round(s['distance_m'])} m"
+                    "Spot",
+                    ranked,
+                    format_func=lambda s: s["name"]
+                    + (f" · {round(s['distance_m'])} m" if s["distance_m"] is not None else " · no coordinates"),
                 )
-                if ranked and ranked[0]["distance_m"] > 300:
+                if ranked and (ranked[0]["distance_m"] is None or ranked[0]["distance_m"] > 300):
                     st.warning("The nearest spot is over 300 m from this photo. Is the spot in CartoTaco yet?")
             else:
                 st.caption("No location in this photo, so spots are in name order.")
@@ -154,27 +171,54 @@ with tab_new:
             new_family = c2.selectbox("Family", sf.FAMILIES)
             new_region = c3.selectbox("Region", sf.REGIONS)
 
+        # If this spot already has a link to this style, start from what is
+        # recorded there: saving replaces heat, house name and note, so blank
+        # inputs would wipe them. Keys carry the pair so the inputs follow it.
+        style_id = None if choice == NEW_STYLE else choice["id"]
+        est_id = site["est_id"] if site else None
+        existing = next((l for l in links if l["est_id"] == est_id and l["style_id"] == style_id), None) or {}
+        pair = f"{est_id}_{style_id}"
+        if existing:
+            st.caption("This spot already has this salsa recorded; its heat, house name and note are filled in below.")
+
         c1, c2, c3 = st.columns(3)
-        rate_heat = c1.checkbox("Record heat", value=True)
-        heat = c1.slider("Heat at this spot", 0, 10, 5, disabled=not rate_heat)
-        house_name = c2.text_input("What the spot calls it", placeholder="optional")
+        rate_heat = c1.checkbox(
+            "Record heat", value=existing.get("heat") is not None if existing else True, key=f"new_hasheat_{pair}"
+        )
+        heat = c1.slider(
+            "Heat at this spot",
+            0,
+            10,
+            existing["heat"] if existing.get("heat") is not None else 5,
+            disabled=not rate_heat,
+            key=f"new_heat_{pair}",
+        )
+        house_name = c2.text_input(
+            "What the spot calls it", existing.get("house_name") or "", placeholder="optional", key=f"new_house_{pair}"
+        )
         observed = c3.date_input("Date", value=meta["taken_on"] or date.today())
         note = st.text_area(
             "Note",
+            existing.get("note") or "",
             placeholder="What you learned here, in your own words. Paraphrase; don't quote or name people.",
+            key=f"new_note_{pair}",
         )
 
         if st.button("Save sighting", type="primary"):
-            if choice == NEW_STYLE and not (new_name or "").strip():
+            if not site:
+                st.error("Pick a spot first.")
+            elif choice == NEW_STYLE and not (new_name or "").strip():
                 st.error("Give the new style a name.")
             else:
                 try:
+                    # Photo first: it is the step most likely to fail, and failing
+                    # here leaves nothing half-created behind
+                    photo_url = sf.upload_photo(sf.to_jpeg(corrected), f"sightings/{site['est_id']}")
                     style = (
                         sf.draft_style_from_sighting(new_name, new_family, new_region, palette, located.get("chunk"))
                         if choice == NEW_STYLE
                         else choice
                     )
-                    photo_url = sf.upload_photo(sf.to_jpeg(corrected), f"sightings/{site['est_id']}")
                     sf.save_sighting(
                         site["est_id"],
                         style["id"],
@@ -187,20 +231,16 @@ with tab_new:
                             "note": note.strip() or None,
                         },
                     )
-                    st.success(f"Saved {style['name']} at {site['name']}.")
-                    if choice == NEW_STYLE:
-                        st.info("The new style is a draft. Finish and publish it on the Catalog tab.")
                 except Exception as e:
                     st.error(f"Could not save: {e}")
+                else:
+                    saved(
+                        f"Saved {style['name']} at {site['name']}."
+                        + (" It is a draft: finish and publish it on the Catalog tab." if style["status"] == "draft" else "")
+                    )
 
 # ── Sightings ────────────────────────────────────────────────────────────────
 with tab_sightings:
-    try:
-        links = sf.list_sightings()
-    except Exception as e:
-        links = []
-        st.error(f"Could not load sightings: {e}")
-
     documented = [link for link in links if link.get("photo_url")]
     st.caption(f"{len(documented)} of {len(links)} spot–salsa links have a field photo.")
     only_documented = st.toggle("Only links with a photo", value=True)
@@ -216,7 +256,14 @@ with tab_sightings:
                 if link.get("palette"):
                     swatches(link["palette"])
                 has_heat = st.checkbox("Record heat", value=link.get("heat") is not None, key=f"{key}_hasheat")
-                edit_heat = st.slider("Heat", 0, 10, link.get("heat") or 5, key=f"{key}_heat", disabled=not has_heat)
+                edit_heat = st.slider(
+                    "Heat",
+                    0,
+                    10,
+                    link["heat"] if link.get("heat") is not None else 5,
+                    key=f"{key}_heat",
+                    disabled=not has_heat,
+                )
                 edit_house = st.text_input("House name", link.get("house_name") or "", key=f"{key}_house")
                 edit_note = st.text_area("Note", link.get("note") or "", key=f"{key}_note")
                 b1, b2 = st.columns(2)
@@ -230,7 +277,7 @@ with tab_sightings:
                             "note": edit_note.strip() or None,
                         },
                     )
-                    st.rerun()
+                    saved(f"Saved {title}.")
                 remove_help = (
                     "This link comes from the spot's salsa row, so only the field data is cleared."
                     if link.get("synced")
@@ -238,7 +285,7 @@ with tab_sightings:
                 )
                 if b2.button("Remove sighting", key=f"{key}_remove", help=remove_help):
                     sf.remove_sighting(link)
-                    st.rerun()
+                    saved(f"Removed {title}.")
 
 # ── Catalog ──────────────────────────────────────────────────────────────────
 with tab_catalog:
@@ -248,11 +295,6 @@ with tab_catalog:
             use_container_width=True,
             hide_index=True,
         )
-    try:
-        all_links = sf.list_sightings()
-    except Exception:
-        all_links = []
-
     for style in styles:
         with st.expander(("📝 " if style["status"] == "draft" else "") + style_label(style)):
             key = f"style_{style['id']}"
@@ -270,8 +312,16 @@ with tab_catalog:
             )
             history = st.text_area("History", style.get("history") or "", height=180, key=f"{key}_history")
 
+            # NULL heat (every new draft) must stay NULL unless a range is chosen
+            heat_known = style.get("heat_min") is not None and style.get("heat_max") is not None
+            has_range = st.checkbox("Record typical heat", value=heat_known, key=f"{key}_hasheat")
             heat_range = st.slider(
-                "Typical heat", 0, 10, (style.get("heat_min") or 0, style.get("heat_max") or 0), key=f"{key}_heat"
+                "Typical heat",
+                0,
+                10,
+                (style["heat_min"], style["heat_max"]) if heat_known else (3, 6),
+                key=f"{key}_heat",
+                disabled=not has_range,
             )
             score_cols = st.columns(len(sf.FLAVOUR_AXES))
             scores = {
@@ -281,7 +331,7 @@ with tab_catalog:
 
             st.markdown("**Palette** — the first colour is the definitive one")
             sighting_palettes = [
-                link["palette"] for link in all_links if link["style_id"] == style["id"] and link.get("palette")
+                link["palette"] for link in links if link["style_id"] == style["id"] and link.get("palette")
             ]
             derived = sf.pad_palette(sf.merge_palettes(sighting_palettes))
             if derived:
@@ -289,7 +339,7 @@ with tab_catalog:
                 swatches(derived)
                 if st.button("Use these colours", key=f"{key}_derive"):
                     sf.update_style(style["id"], {"palette": derived})
-                    st.rerun()
+                    saved(f"{style['name']} now uses the colours from its sightings.")
             pick_cols = st.columns(len(style["palette"]))
             palette = [
                 col.color_picker(f"No. {i + 1}", c, key=f"{key}_pal_{i}_{c}").lower()
@@ -311,8 +361,8 @@ with tab_catalog:
                     "origin": origin.strip() or None,
                     "ingredients": [line.strip() for line in ingredients.splitlines() if line.strip()],
                     "history": history.strip() or None,
-                    "heat_min": heat_range[0],
-                    "heat_max": heat_range[1],
+                    "heat_min": heat_range[0] if has_range else None,
+                    "heat_max": heat_range[1] if has_range else None,
                     "palette": palette,
                     "img_credit": img_credit.strip() or None,
                     **scores,
@@ -321,7 +371,7 @@ with tab_catalog:
                     if new_img:
                         data["img_url"] = sf.upload_photo(sf.to_jpeg(sf.load_photo(new_img.getvalue())), "styles")
                     sf.update_style(style["id"], data)
-                    st.success(f"Saved {name}.")
-                    st.rerun()
                 except Exception as e:
                     st.error(f"Could not save: {e}")
+                else:
+                    saved(f"Saved {name}.")

@@ -79,8 +79,11 @@ def read_photo_meta(image_bytes: bytes) -> dict:
     gps = exif.get_ifd(0x8825)
     try:
         if gps.get(2) and gps.get(4):
-            meta["lat"] = _to_degrees(gps[2], gps.get(1, "N"))
-            meta["lon"] = _to_degrees(gps[4], gps.get(3, "E"))
+            lat = _to_degrees(gps[2], gps.get(1, "N"))
+            lon = _to_degrees(gps[4], gps.get(3, "E"))
+            # A phone with no fix can write 0/0 rationals, which come out as NaN
+            if math.isfinite(lat) and math.isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180:
+                meta["lat"], meta["lon"] = lat, lon
     except (TypeError, ValueError, ZeroDivisionError, IndexError):
         pass
     return meta
@@ -97,12 +100,17 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def nearest_sites(sites: list[dict], lat: float, lon: float) -> list[dict]:
-    """Sites with coordinates, nearest first, each with `distance_m` added."""
-    placed = [s for s in sites if s.get("lat_1") is not None and s.get("lon_1") is not None]
-    return sorted(
-        ({**s, "distance_m": haversine_m(lat, lon, s["lat_1"], s["lon_1"])} for s in placed),
+    """Every site, nearest first, each with `distance_m` added.
+
+    Sites without coordinates can't be ranked but must stay selectable, so they
+    follow the ranked ones with `distance_m` None.
+    """
+    has_coords = lambda s: s.get("lat_1") is not None and s.get("lon_1") is not None
+    ranked = sorted(
+        ({**s, "distance_m": haversine_m(lat, lon, s["lat_1"], s["lon_1"])} for s in sites if has_coords(s)),
         key=lambda s: s["distance_m"],
     )
+    return ranked + [{**s, "distance_m": None} for s in sites if not has_coords(s)]
 
 
 # ── Colour ───────────────────────────────────────────────────────────────────
@@ -240,28 +248,34 @@ Known style slugs: """
 
 def _valid_box(value) -> Box | None:
     try:
-        box = tuple(min(1.0, max(0.0, float(v))) for v in value)
+        box = tuple(float(v) for v in value)
     except (TypeError, ValueError):
         return None
-    return box if len(box) == 4 and box[2] > box[0] and box[3] > box[1] else None
+    if len(box) != 4 or not all(math.isfinite(v) for v in box):
+        return None
+    box = tuple(min(1.0, max(0.0, v)) for v in box)
+    return box if box[2] > box[0] and box[3] > box[1] else None
 
 
 def parse_locate_response(raw_text: str, known_slugs: list[str]) -> dict:
     """Validate Claude's answer. Anything malformed falls back to a safe default."""
-    text = raw_text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+    text = re.sub(r"^```[a-z]*\s*|\s*```$", "", raw_text.strip())
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
         data = {}
+    if not isinstance(data, dict):
+        data = {}
     chunk = data.get("chunk")
+    ingredients = data.get("visible_ingredients")
+    ingredients = ingredients if isinstance(ingredients, list) else []
+    is_number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
     return {
         "salsa_box": _valid_box(data.get("salsa_box")) or DEFAULT_SALSA_BOX,
         "card_box": _valid_box(data.get("card_box")),
         "style_slug": data.get("style_slug") if data.get("style_slug") in known_slugs else None,
-        "visible_ingredients": [str(i) for i in data.get("visible_ingredients") or []][:12],
-        "chunk": min(10, max(0, round(chunk))) if isinstance(chunk, (int, float)) else None,
+        "visible_ingredients": [str(i) for i in ingredients][:12],
+        "chunk": min(10, max(0, round(chunk))) if is_number(chunk) else None,
     }
 
 
@@ -364,12 +378,18 @@ def draft_style_from_sighting(name: str, family: str, region: str, palette: list
     Flavour scores start in the middle (texture from the photo if Claude gave
     one); they and the editorial text are filled in on the Catalog tab.
     """
+    slug = slugify(name)
+    existing = get_client().table("salsa_styles").select("*").eq("slug", slug).execute().data
+    if existing:
+        # A retry after a failed save, or a name that already exists: use it
+        return existing[0]
+
     scores = {axis: 5 for axis in FLAVOUR_AXES}
     if chunk is not None:
         scores["chunk"] = chunk
     return create_style(
         {
-            "slug": slugify(name),
+            "slug": slug,
             "name": name.strip(),
             "family": family,
             "region": region,
