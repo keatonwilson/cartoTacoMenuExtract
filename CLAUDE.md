@@ -62,9 +62,26 @@ All main tables keyed by `est_id`. Reference tables keyed by `id`.
 
 ```bash
 cp .env.example .env  # Fill in API keys
-pip install -r requirements.txt
-streamlit run app.py
+python3 -m pip install -r requirements.txt
+python3 -m streamlit run app.py   # prod (default)
 ```
+
+`.env` holds two Supabase projects. `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` are
+**prod** (the default, used for menu extraction and promotion). The app ignores
+`SUPABASE_STAGING_URL`/`SUPABASE_STAGING_SERVICE_KEY` unless you swap them in
+for one run. `load_dotenv()` doesn't override variables already set in the shell:
+
+```bash
+# Run against STAGING (Salsa Atlas curation in Salsa Field Notes; prod has no atlas tables until it ships)
+SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
+SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
+python3 -m streamlit run app.py
+```
+
+If Salsa Field Notes loads the catalog without errors, you're on staging.
+
+Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
+is a dead Python 2.7 shim.
 
 ## Before First Run
 
