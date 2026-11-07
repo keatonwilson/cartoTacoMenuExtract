@@ -70,6 +70,15 @@ def test_degenerate_box_still_samples_something():
     assert len(sf.extract_palette(_scene(), (0.5, 0.5, 0.5, 0.5), k=3)) >= 1
 
 
+def test_close_up_is_a_square_of_only_salsa():
+    # Green salsa in a wide box on a red table: the square must stay inside it
+    img = Image.new("RGB", (1000, 800), "red")
+    img.paste((0, 160, 0), (200, 300, 800, 500))
+    out = sf.close_up(img, (0.2, 0.375, 0.8, 0.625))
+    assert out.size == (140, 140)
+    assert set(out.getdata()) == {(0, 160, 0)}
+
+
 def test_merge_palettes_takes_the_median_per_rank():
     merged = sf.merge_palettes(
         [["#b02820", "#401010"], ["#b42a1e", "#421212"], ["#ff00ff", "#000000"], []]  # third is a bad photo

@@ -142,6 +142,7 @@ with tab_new:
             ]
             if not card_box:
                 st.warning("No grey card: these hex codes are not corrected for the lighting.")
+            st.image(sf.close_up(corrected, salsa_box), width=96, caption="The atlas thumbnail (the red box's centre)")
 
         with left:
             st.image(
@@ -220,7 +221,7 @@ with tab_new:
                 try:
                     # Photo first: it is the step most likely to fail, and failing
                     # here leaves nothing half-created behind
-                    photo_url = sf.upload_photo(sf.to_jpeg(corrected), f"sightings/{site['est_id']}")
+                    photo_url = sf.upload_photo(sf.to_jpeg(sf.close_up(corrected, salsa_box)), f"sightings/{site['est_id']}")
                     style = (
                         sf.draft_style_from_sighting(new_name, new_family, new_region, palette, located.get("chunk"))
                         if choice == NEW_STYLE
