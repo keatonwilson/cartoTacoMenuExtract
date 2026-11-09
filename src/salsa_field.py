@@ -211,6 +211,20 @@ def to_jpeg(img: Image.Image, max_dim: int = PHOTO_MAX_DIM) -> bytes:
     return buf.getvalue()
 
 
+def close_up(img: Image.Image, box: Box, size: int = 480, fill: float = 0.7) -> Image.Image:
+    """A square from the middle of the salsa box: what the atlas's round
+    thumbnail shows. The box sits inside the salsa's surface, and `fill` keeps
+    clear of its edges (Claude's boxes often graze the rim), so the circle
+    holds only salsa, no rim, table or card."""
+    w, h = img.size
+    x0, y0, x1, y1 = box
+    side = max(1, int(fill * min(abs(x1 - x0) * w, abs(y1 - y0) * h)))
+    cx, cy = (x0 + x1) / 2 * w, (y0 + y1) / 2 * h
+    left, top = int(cx - side / 2), int(cy - side / 2)
+    square = img.crop((left, top, left + side, top + side))
+    return square.resize((size, size)) if side > size else square
+
+
 def slugify(name: str) -> str:
     """'Salsa de Chiltepín' → 'chiltepin' (matches the atlas's URL slugs)."""
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()

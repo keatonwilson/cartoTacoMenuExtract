@@ -98,7 +98,7 @@ python -m pytest tests/
 ## Design Decisions
 
 - Salsa sightings skip the staging table: there is one curator, so a sighting saves straight to `site_salsas`. The safety net is `salsa_styles.status` — a new style is a `draft` and invisible on the public site until published. `save_sighting` never sends `synced`, so links created by cartoTaco's sync stay synced and new ones are hand-made
-- Photos go to the public `salsas` bucket (created by cartoTaco migration 036) as white-balanced JPEGs
+- Photos go to the public `salsas` bucket (created by cartoTaco migration 036) as white-balanced JPEGs. A sighting saves only the square close-up from the middle of the salsa box (`close_up`), since the atlas shows it as a small circle; the full frame isn't kept
 
 - Staging uses single table with JSONB columns (simpler than 6 mirror tables)
 - `_perc` fields are AI-estimated proportions (0.0-1.0, summing to 1.0) for menu item and protein prominence
