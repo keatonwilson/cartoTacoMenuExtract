@@ -23,7 +23,8 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/3_Promote.py` — Promote approved rows to production; pending-spots management (mark vetted / retract)
 - `pages/4_Spec_Tables.py` — CRUD UI for item_spec and protein_spec with AI descriptions
 - `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
-- `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes
+- `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes, description-similarity preview/recompute
+- `src/similarity.py` — Description similarity for cartoTaco migration 042: embeds every described spot's short + long description (own name and street stripped; combined 0.3/0.7), writes all pairwise cosine scores through `replace_site_similarity()` (atomic, always a full recompute). `description_hash()` mirrors cartoTaco's SQL function of the same name, which the `similarity_stale` health check compares — keep in sync. Optional deps in `requirements-similarity.txt` (`fastembed` local default, `voyageai` with `VOYAGE_API_KEY`)
 - `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES` mirror that migration's CHECK constraints — keep in sync
 - `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: edit/remove; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
@@ -79,6 +80,15 @@ python3 -m streamlit run app.py
 ```
 
 If Salsa Field Notes loads the catalog without errors, you're on staging.
+
+Description similarity (after editing descriptions, or when Data Health lists
+`similarity_stale`). Run it against staging and prod separately:
+
+```bash
+python3 -m pip install -r requirements-similarity.txt
+python3 -m src.similarity --dry-run   # print each spot's top 3 + the score spread, write nothing
+python3 -m src.similarity             # write
+```
 
 Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
 is a dead Python 2.7 shim.

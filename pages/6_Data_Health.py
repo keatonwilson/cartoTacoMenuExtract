@@ -46,3 +46,36 @@ if heals:
     st.dataframe(heals, use_container_width=True, hide_index=True)
 else:
     st.caption("No automatic fixes logged yet.")
+
+st.divider()
+st.subheader("Description similarity")
+st.caption(
+    "Scores behind **Similar spots** on the card and the description half of taste-profile "
+    "recommendations (cartoTaco migration 042). Re-run after editing descriptions; "
+    "`similarity_stale` above lists spots that changed. Same as `python3 -m src.similarity`."
+)
+sim_provider = st.radio("Embedding provider", ["fastembed", "voyage"], horizontal=True,
+                        help="fastembed runs locally; voyage needs VOYAGE_API_KEY")
+c1, c2 = st.columns(2)
+preview = c1.button("Preview neighbours (writes nothing)")
+recompute = c2.button("Recompute and write", type="primary")
+if preview or recompute:
+    from src.similarity import neighbours, run
+
+    try:
+        with st.spinner("Embedding descriptions…"):
+            result = run(provider=sim_provider, dry_run=preview)
+    except Exception as e:
+        st.error(f"Similarity run failed: {e}")
+    else:
+        if recompute:
+            st.success(f"Wrote {len(result.pairs)} pairs ({result.model}).")
+        near = neighbours(result.spots, result.pairs, 3)
+        st.dataframe(
+            [
+                {"spot": s.name + (" (closed)" if s.closed else " (pending)" if s.pending else ""),
+                 **{f"#{i + 1}": f"{o.name} · {score:.3f}" for i, (o, score) in enumerate(near[s.est_id])}}
+                for s in sorted(result.spots, key=lambda s: s.name.lower())
+            ],
+            use_container_width=True, hide_index=True,
+        )
