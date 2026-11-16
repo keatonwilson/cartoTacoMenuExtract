@@ -1,0 +1,5 @@
+# Optional: only for src/similarity.py (description similarity, cartoTaco migration 042).
+# fastembed runs the default local model (no key); voyageai is for --provider voyage.
+numpy>=1.26
+fastembed>=0.4
+voyageai>=0.3
