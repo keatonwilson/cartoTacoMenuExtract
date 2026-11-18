@@ -9,3 +9,4 @@ build/
 .streamlit/secrets.toml
 # roborev snapshots
 /.roborev/
+backups/
