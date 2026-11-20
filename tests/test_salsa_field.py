@@ -2,11 +2,15 @@
 
 import io
 from datetime import date
+from pathlib import Path
 
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from src import salsa_field as sf
+
+# AppTest resolves a relative path against this file, not the working directory
+PAGE = str(Path(__file__).parents[1] / "pages" / "7_Salsa_Field_Notes.py")
 
 
 def _jpeg(img: Image.Image, exif: Image.Exif | None = None) -> bytes:
@@ -193,14 +197,15 @@ def test_remove_sighting_clears_synced_links_and_deletes_hand_made_ones(monkeypa
 
     class Client:
         def table(self, name):
-            assert name == "site_salsas"
+            assert name in ("site_salsas", "salsa")
             return Query()
 
     monkeypatch.setattr(sf, "get_client", lambda: Client())
     sf.remove_sighting({"est_id": 1, "style_id": 2, "synced": True})
     sf.remove_sighting({"est_id": 1, "style_id": 3, "synced": False})
     assert calls[0][0] == "update" and calls[0][1]["photo_url"] is None
-    assert calls[1][0] == "delete"
+    assert calls[1] == ("update", {"est_id": 1})  # re-sync drops the emptied link if unlisted
+    assert calls[2][0] == "delete"
 
 
 STYLE = {
@@ -221,7 +226,7 @@ def test_page_renders_with_data(monkeypatch):
     monkeypatch.setattr(sf, "list_sites", lambda: [{"est_id": 6, "name": "Tacos Apson", "lat_1": 32.2, "lon_1": -110.9}])
     monkeypatch.setattr(sf, "list_styles", lambda: [STYLE, {**STYLE, "id": 2, "slug": "nueva", "name": "Nueva", "status": "draft"}])
     monkeypatch.setattr(sf, "list_sightings", lambda: [LINK])
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception, at.exception
     assert len(at.tabs) == 3
 
@@ -233,7 +238,7 @@ def _run_page(monkeypatch, links, styles=None):
     monkeypatch.setattr(sf, "list_sightings", lambda: links)
     monkeypatch.setattr(sf, "save_sighting", lambda est, style, fields: saves.append(fields))
     monkeypatch.setattr(sf, "update_style", lambda style_id, data: saves.append(data))
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception, at.exception
     return at, saves
 
@@ -290,6 +295,48 @@ def test_page_explains_missing_tables(monkeypatch):
 
     monkeypatch.setattr(sf, "list_sites", lambda: [])
     monkeypatch.setattr(sf, "list_styles", boom)
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception
     assert "036" in at.info[0].value
+
+
+MARKINGS = {"total_num": 3, **{f"{v}_yes": v in ("verde", "rojo") for v in sf.VARIETIES}}
+
+
+def test_save_markings_updates_only_the_markings(monkeypatch):
+    calls = []
+
+    class Query:
+        def update(self, row): calls.append(row); return self
+        def eq(self, *args): calls.append(args); return self
+        def execute(self): return None
+
+    monkeypatch.setattr(sf, "get_client", lambda: type("C", (), {"table": lambda self, name: calls.append(name) or Query()})())
+    sf.save_markings(6, {"rojo_yes": False, "other_1_name": "ignored"})
+    assert calls[0] == "salsa" and calls[2] == ("est_id", 6)
+    assert calls[1] == {"rojo_yes": False}
+
+
+def test_unticking_a_salsa_saves_and_warns_when_a_sighting_keeps_it(monkeypatch):
+    """The "rojo is really taquera" flow: untick Roja; its photographed link is kept, so say so."""
+    rojo = {**STYLE, "id": 2, "slug": "roja", "name": "Salsa Roja", "variety_key": "rojo"}
+    rojo_link = {**LINK, "style_id": 2, "photo_url": "https://example.test/p.jpg", "salsa_styles": {"name": "Salsa Roja", "slug": "roja", "status": "published"}}
+    saves = []
+    monkeypatch.setattr(sf, "get_markings", lambda est_id: dict(MARKINGS))
+    monkeypatch.setattr(sf, "save_markings", lambda est_id, m: saves.append((est_id, m)))
+    at, _ = _run_page(monkeypatch, [rojo_link], styles=[STYLE, rojo])
+
+    at.selectbox(key="markings_spot").select_index(0).run()
+    assert not at.warning
+    at.checkbox(key="mark_6_rojo").uncheck().run()
+    assert "Salsa Roja" in at.warning[0].value
+    next(b for b in at.button if b.key == "mark_6_save").click().run()
+    assert not at.exception, at.exception
+    assert saves == [(6, {"rojo_yes": False})]  # only the change: untouched markings, NULL or not, stay as they are
+
+
+def test_markings_explain_a_spot_without_a_salsa_row(monkeypatch):
+    monkeypatch.setattr(sf, "get_markings", lambda est_id: None)
+    at, _ = _run_page(monkeypatch, [])
+    at.selectbox(key="markings_spot").select_index(0).run()
+    assert "no salsa row" in at.info[0].value

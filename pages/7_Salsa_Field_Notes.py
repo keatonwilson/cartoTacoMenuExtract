@@ -20,7 +20,7 @@ try:
     links = sf.list_sightings()
 except Exception as e:
     st.error(f"Could not load sites and salsa styles: {e}")
-    st.info("The Salsa Atlas tables come from cartoTaco migrations 036–038. Have they reached this database?")
+    st.info("The Salsa Atlas tables come from cartoTaco migrations 036–039 and 041. Have they reached this database?")
     st.stop()
 
 # A message from the save that triggered this rerun (st.success would be wiped by it)
@@ -249,6 +249,58 @@ with tab_new:
 
 # ── Sightings ────────────────────────────────────────────────────────────────
 with tab_sightings:
+    st.subheader("Survey markings")
+    st.caption(
+        "The salsas the menu survey recorded for a spot. Unticking one drops its link from the atlas, "
+        "ticking one adds it. If the survey's rojo is really a Taquera: untick Roja, save, then add a Taquera sighting."
+    )
+    spot = st.selectbox(
+        "Spot", sites, index=None, format_func=lambda s: s["name"], key="markings_spot", placeholder="Pick a spot"
+    )
+    if spot:
+        markings = sf.get_markings(spot["est_id"])
+        if markings is None:
+            st.info("This spot has no salsa row yet. Promote a menu extraction for it first.")
+        else:
+            key = f"mark_{spot['est_id']}"
+            by_variety = {s["variety_key"]: s for s in styles if s.get("variety_key")}
+            kept = {
+                link["style_id"]
+                for link in links
+                if link["est_id"] == spot["est_id"] and (not link.get("synced") or sf.kept_by_sync(link))
+            }
+            edited = {}
+            cols = st.columns(4)
+            for i, variety in enumerate(sf.VARIETIES):
+                name = by_variety[variety]["name"] if variety in by_variety else variety
+                edited[f"{variety}_yes"] = cols[i % 4].checkbox(
+                    name, bool(markings.get(f"{variety}_yes")), key=f"{key}_{variety}"
+                )
+            edited["total_num"] = st.number_input(
+                "Salsas on offer", min_value=0, value=markings.get("total_num"), step=1, key=f"{key}_total"
+            )
+            stays = [
+                by_variety[v]["name"]
+                for v in sf.VARIETIES
+                if not edited[f"{v}_yes"] and v in by_variety and by_variety[v]["id"] in kept
+            ]
+            if stays:
+                st.warning(
+                    f"Unticked but kept in the atlas, because the link is hand-made or holds field data: {', '.join(stays)}. "
+                    "Remove that sighting below to drop it."
+                )
+            # Compare with what the widgets showed: a NULL marking shows unticked and stays NULL unless ticked
+            shown = {k: bool(markings.get(k)) for k in edited if k != "total_num"} | {"total_num": markings.get("total_num")}
+            changes = {k: v for k, v in edited.items() if v != shown[k]}
+            if st.button("Save markings", key=f"{key}_save", type="primary", disabled=not changes):
+                try:
+                    sf.save_markings(spot["est_id"], changes)
+                except Exception as e:
+                    st.error(f"Could not save: {e}")
+                else:
+                    saved(f"Saved the survey markings for {spot['name']}.")
+
+    st.divider()
     documented = [link for link in links if link.get("photo_url")]
     st.caption(f"{len(documented)} of {len(links)} spot–salsa links have a field photo.")
     only_documented = st.toggle("Only links with a photo", value=True)
