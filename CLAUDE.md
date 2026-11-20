@@ -26,9 +26,9 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/5_Scout_New_Spots.py` — Two tabs: (1) scout a known spot → review/geocode → dedup check → stage as pending; (2) discovery mode: city-wide search for untracked spots → checklist → batch scout+geocode+stage (skips deep-scout duplicates), review lands in Staging Review
 - `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes, description-similarity preview/recompute
 - `src/similarity.py` — Description similarity for cartoTaco migration 042: embeds every described spot's short + long description (own name and street stripped; combined 0.3/0.7), writes all pairwise cosine scores through `replace_site_similarity()` (atomic, always a full recompute). `description_hash()` mirrors cartoTaco's SQL function of the same name, which the `similarity_stale` health check compares — keep in sync. Optional deps in `requirements-similarity.txt` (`fastembed` local default, `voyageai` with `VOYAGE_API_KEY`)
-- `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES` mirror that migration's CHECK constraints — keep in sync
+- `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). `get_markings`/`save_markings` read and update only a spot's survey markings. Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES`/`VARIETIES` mirror that migration's CHECK constraints — keep in sync
 - `src/sync_to_staging.py` — Copies prod content rows (sites, hours, descriptions, menu, protein, salsa, the 3 spec tables) into the staging DB by upsert. Never deletes, never touches the atlas tables, backs the atlas up to `backups/` before writing. See "Keeping staging in sync with prod"
-- `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: edit/remove; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
+- `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: survey markings editor per spot (the 8 `*_yes` booleans + `total_num` on prod's `salsa` row; the sync trigger adds/drops synced links), then edit/remove sightings; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
 ## Production Database Schema (Supabase)
 
@@ -70,18 +70,17 @@ python3 -m streamlit run app.py   # prod (default)
 ```
 
 `.env` holds two Supabase projects. `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` are
-**prod** (the default, used for menu extraction and promotion). The app ignores
-`SUPABASE_STAGING_URL`/`SUPABASE_STAGING_SERVICE_KEY` unless you swap them in
-for one run. `load_dotenv()` doesn't override variables already set in the shell:
+**prod**, and the app uses them for everything: menu extraction, promotion and
+Salsa Field Notes (the atlas is curated on prod; staging is seeded from it).
+`SUPABASE_STAGING_URL`/`SUPABASE_STAGING_SERVICE_KEY` are for scripts that also
+touch staging. To run one against staging, swap them in for that run
+(`load_dotenv()` doesn't override variables already set in the shell):
 
 ```bash
-# Run against STAGING (Salsa Atlas curation in Salsa Field Notes; prod has no atlas tables until it ships)
 SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
 SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
-python3 -m streamlit run app.py
+python3 -m src.similarity --dry-run
 ```
-
-If Salsa Field Notes loads the catalog without errors, you're on staging.
 
 Description similarity (after editing descriptions, or when Data Health lists
 `similarity_stale`). Run it against staging and prod separately:
@@ -161,6 +160,7 @@ python -m pytest tests/
 
 ## Design Decisions
 
+- Field Notes runs against prod, where the atlas is curated. A visit corrects the spot's survey markings (`salsa` booleans + `total_num`); `sync_site_salsas()` then drops a stale synced link unless it holds field data, and the editor warns when it does. Known limit: re-promoting a menu extraction re-writes those columns and undoes the fieldwork (`shortcut:` in `promotion.py`)
 - Salsa sightings skip the staging table: there is one curator, so a sighting saves straight to `site_salsas`. The safety net is `salsa_styles.status` — a new style is a `draft` and invisible on the public site until published. `save_sighting` never sends `synced`, so links created by cartoTaco's sync stay synced and new ones are hand-made
 - Photos go to the public `salsas` bucket (created by cartoTaco migration 036) as white-balanced JPEGs. A sighting saves only the square close-up from the middle of the salsa box (`close_up`), since the atlas shows it as a small circle; the full frame isn't kept
 

@@ -40,6 +40,11 @@ PALETTE_SIZE = 4
 FAMILIES = ["fresca", "cooked", "dried-chile", "oil", "creamy", "pickled", "mole"]
 REGIONS = ["north", "west", "central", "south", "everywhere"]
 FLAVOUR_AXES = ["smoke", "acid", "sweet", "chunk", "rich"]
+# salsa_styles.variety_key values; each is a `<variety>_yes` boolean on `salsa`
+VARIETIES = ["verde", "rojo", "pico", "pickles", "chipotle", "avo", "molcajete", "macha"]
+
+# Field data on a link. sync_site_salsas() (migration 039) never deletes a synced link holding any of it
+CURATED_FIELDS = ["photo_url", "palette", "observed_at", "heat", "house_name", "note"]
 
 # sRGB value of a standard 18% grey card
 GREY_CARD_18 = 119
@@ -385,10 +390,32 @@ def remove_sighting(link: dict) -> None:
     """
     query = get_client().table("site_salsas")
     if link.get("synced"):
-        cleared = {"photo_url": None, "palette": None, "observed_at": None, "heat": None, "house_name": None, "note": None}
+        cleared = dict.fromkeys(CURATED_FIELDS)
         query.update(cleared).eq("est_id", link["est_id"]).eq("style_id", link["style_id"]).execute()
     else:
         query.delete().eq("est_id", link["est_id"]).eq("style_id", link["style_id"]).execute()
+
+
+def get_markings(est_id: int) -> dict | None:
+    """The spot's survey markings (the 8 `*_yes` booleans and total_num), or None if it has no salsa row."""
+    columns = ", ".join(["total_num"] + [f"{v}_yes" for v in VARIETIES])
+    rows = get_client().table("salsa").select(columns).eq("est_id", est_id).execute().data
+    return rows[0] if rows else None
+
+
+def save_markings(est_id: int, markings: dict) -> None:
+    """Update only the markings on the spot's salsa row.
+
+    The salsa trigger then adds a synced link for each ticked salsa and drops
+    the synced links of unticked ones, unless they hold field data.
+    """
+    row = {f"{v}_yes": bool(markings[f"{v}_yes"]) for v in VARIETIES} | {"total_num": markings["total_num"]}
+    get_client().table("salsa").update(row).eq("est_id", est_id).execute()
+
+
+def kept_by_sync(link: dict) -> bool:
+    """True if the sync keeps this link even when the salsa row stops listing it."""
+    return any(link.get(f) is not None for f in CURATED_FIELDS)
 
 
 def draft_style_from_sighting(name: str, family: str, region: str, palette: list[str], chunk: int | None) -> dict:
