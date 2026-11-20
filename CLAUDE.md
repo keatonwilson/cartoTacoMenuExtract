@@ -79,7 +79,7 @@ touch staging. To run one against staging, swap them in for that run
 ```bash
 SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
 SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
-python3 -m src.similarity --dry-run
+python3 -m src.similarity --dry-run   # the similarity check below, on staging
 ```
 
 Description similarity (after editing descriptions, or when Data Health lists

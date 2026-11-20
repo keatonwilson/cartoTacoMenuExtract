@@ -312,9 +312,9 @@ def test_save_markings_updates_only_the_markings(monkeypatch):
         def execute(self): return None
 
     monkeypatch.setattr(sf, "get_client", lambda: type("C", (), {"table": lambda self, name: calls.append(name) or Query()})())
-    sf.save_markings(6, {**MARKINGS, "rojo_yes": False, "other_1_name": "ignored"})
+    sf.save_markings(6, {"rojo_yes": False, "other_1_name": "ignored"})
     assert calls[0] == "salsa" and calls[2] == ("est_id", 6)
-    assert calls[1] == {**MARKINGS, "rojo_yes": False}
+    assert calls[1] == {"rojo_yes": False}
 
 
 def test_unticking_a_salsa_saves_and_warns_when_a_sighting_keeps_it(monkeypatch):
@@ -332,7 +332,7 @@ def test_unticking_a_salsa_saves_and_warns_when_a_sighting_keeps_it(monkeypatch)
     assert "Salsa Roja" in at.warning[0].value
     next(b for b in at.button if b.key == "mark_6_save").click().run()
     assert not at.exception, at.exception
-    assert saves == [(6, {**MARKINGS, "rojo_yes": False})]
+    assert saves == [(6, {"rojo_yes": False})]  # only the change: untouched markings, NULL or not, stay as they are
 
 
 def test_markings_explain_a_spot_without_a_salsa_row(monkeypatch):
