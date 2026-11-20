@@ -20,7 +20,7 @@ try:
     links = sf.list_sightings()
 except Exception as e:
     st.error(f"Could not load sites and salsa styles: {e}")
-    st.info("The Salsa Atlas tables come from cartoTaco migrations 036–038. Have they reached this database?")
+    st.info("The Salsa Atlas tables come from cartoTaco migrations 036–039 and 041. Have they reached this database?")
     st.stop()
 
 # A message from the save that triggered this rerun (st.success would be wiped by it)
@@ -267,7 +267,7 @@ with tab_sightings:
             kept = {
                 link["style_id"]
                 for link in links
-                if link["est_id"] == spot["est_id"] and link.get("synced") and sf.kept_by_sync(link)
+                if link["est_id"] == spot["est_id"] and (not link.get("synced") or sf.kept_by_sync(link))
             }
             edited = {}
             cols = st.columns(4)
@@ -286,12 +286,16 @@ with tab_sightings:
             ]
             if stays:
                 st.warning(
-                    f"Unticked but kept in the atlas, because the link holds field data: {', '.join(stays)}. "
+                    f"Unticked but kept in the atlas, because the link is hand-made or holds field data: {', '.join(stays)}. "
                     "Remove that sighting below to drop it."
                 )
             if st.button("Save markings", key=f"{key}_save", type="primary"):
-                sf.save_markings(spot["est_id"], edited)
-                saved(f"Saved the survey markings for {spot['name']}.")
+                try:
+                    sf.save_markings(spot["est_id"], edited)
+                except Exception as e:
+                    st.error(f"Could not save: {e}")
+                else:
+                    saved(f"Saved the survey markings for {spot['name']}.")
 
     st.divider()
     documented = [link for link in links if link.get("photo_url")]

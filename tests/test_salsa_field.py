@@ -197,14 +197,15 @@ def test_remove_sighting_clears_synced_links_and_deletes_hand_made_ones(monkeypa
 
     class Client:
         def table(self, name):
-            assert name == "site_salsas"
+            assert name in ("site_salsas", "salsa")
             return Query()
 
     monkeypatch.setattr(sf, "get_client", lambda: Client())
     sf.remove_sighting({"est_id": 1, "style_id": 2, "synced": True})
     sf.remove_sighting({"est_id": 1, "style_id": 3, "synced": False})
     assert calls[0][0] == "update" and calls[0][1]["photo_url"] is None
-    assert calls[1][0] == "delete"
+    assert calls[1] == ("update", {"est_id": 1})  # re-sync drops the emptied link if unlisted
+    assert calls[2][0] == "delete"
 
 
 STYLE = {

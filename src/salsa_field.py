@@ -392,6 +392,8 @@ def remove_sighting(link: dict) -> None:
     if link.get("synced"):
         cleared = dict.fromkeys(CURATED_FIELDS)
         query.update(cleared).eq("est_id", link["est_id"]).eq("style_id", link["style_id"]).execute()
+        # Re-run the sync for this spot: it deletes the now-empty link if the markings no longer list it
+        get_client().table("salsa").update({"est_id": link["est_id"]}).eq("est_id", link["est_id"]).execute()
     else:
         query.delete().eq("est_id", link["est_id"]).eq("style_id", link["style_id"]).execute()
 
