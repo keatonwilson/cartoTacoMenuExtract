@@ -26,6 +26,8 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from supabase import create_client
 
+from src.spec_tables import normalize_spec_name
+
 load_dotenv()
 
 BUCKET = "salsas"
@@ -69,39 +71,49 @@ def is_sighting(link):
 
 def live_est_ids(prod_sites):
     """Spots the public site shows as open: vetted and not closed."""
-    return {s["est_id"] for s in prod_sites if s.get("vetting_status", "vetted") == "vetted" and not s.get("closed_at")}
+    return {s["est_id"] for s in prod_sites if (s.get("vetting_status") or "vetted") == "vetted" and not s.get("closed_at")}
 
 
-def preflight(staging_styles, staging_links, staging_specs, prod_specs, prod_sites, objects, src_prefix):
-    """Every reason the copy can't go ahead; empty means go."""
+def prod_spec_ids(staging_spec_id, staging_specs, prod_specs):
+    """Prod salsa_spec ids whose normalized name matches the staging spec's."""
+    name = normalize_spec_name(next((s["name"] for s in staging_specs if s["id"] == staging_spec_id), None))
+    return [s["id"] for s in prod_specs if name and normalize_spec_name(s["name"]) == name]
+
+
+def preflight(staging_styles, staging_links, staging_specs, prod_specs, prod_sites, objects, src_prefix,
+              prod_styles=(), prod_links=()):
+    """Every reason the copy can't go ahead; empty means go.
+
+    Deliberately strict: it also checks rows the copy will skip.
+    """
     problems = []
+    for table, staged, prod in (("salsa_styles", staging_styles, prod_styles), ("site_salsas", staging_links, prod_links)):
+        if staged and prod and (missing := set(staged[0]) - set(prod[0]) - SKIP_COLUMNS):
+            problems.append(f"{table}: prod has no column {sorted(missing)}; run the missing migration first")
+
     prod_est_ids = {s["est_id"] for s in prod_sites}
     for link in staging_links:
         if (is_sighting(link) or not link["synced"]) and link["est_id"] not in prod_est_ids:
             problems.append(f"site_salsas ({link['est_id']}, {link['style_id']}): spot {link['est_id']} is not in prod")
 
-    spec_names = {s["id"]: s["name"] for s in staging_specs}
-    prod_spec_names = [s["name"] for s in prod_specs]
     for style in staging_styles:
         if style.get("spec_id") is not None:
-            name = spec_names.get(style["spec_id"])
-            if prod_spec_names.count(name) != 1:
-                problems.append(f"style {style['slug']}: salsa_spec {name!r} matches {prod_spec_names.count(name)} prod specs")
+            if len(matches := prod_spec_ids(style["spec_id"], staging_specs, prod_specs)) != 1:
+                problems.append(f"style {style['slug']}: salsa_spec {style['spec_id']} matches {len(matches)} prod specs by name")
 
     paths = {p for p, _, _ in objects}
     for row in staging_styles + staging_links:
         for col in ("img_url", "photo_url"):
             url = row.get(col)
-            if url and url.startswith(src_prefix) and url[len(src_prefix):].split("?")[0] not in paths:
+            if url and "/storage/v1/object/" in url and not url.startswith(src_prefix):
+                problems.append(f"{col} {url} is on a storage host other than staging's; it wouldn't be rewritten")
+            elif url and url.startswith(src_prefix) and url[len(src_prefix):].split("?")[0] not in paths:
                 problems.append(f"{col} {url} is not under {'/'.join(FOLDERS)} in the staging bucket")
     return problems
 
 
 def resolve_spec_id(spec_id, staging_specs, prod_specs):
-    if spec_id is None:
-        return None
-    name = next(s["name"] for s in staging_specs if s["id"] == spec_id)
-    return next(s["id"] for s in prod_specs if s["name"] == name)
+    return None if spec_id is None else prod_spec_ids(spec_id, staging_specs, prod_specs)[0]
 
 
 def diff_fields(new, old):
@@ -168,7 +180,7 @@ def plan_links(staging_links, staging_styles, prod_ids_by_slug, live, prod_links
 def expected_counts(style_rows, prod_styles, prod_links, staging_styles, staging_links, live):
     """Per slug after the copy: (status, live spots, synced, hand-made, sightings).
 
-    Same columns as staging_atlas.py's table, so the two can be compared.
+    Same columns as the plan's staging_atlas.py report (run against staging), so the two can be compared.
     """
     status = {s["slug"]: s["status"] for s in prod_styles} | {r["slug"]: r["status"] for r in style_rows}
     slug_of_prod = {s["id"]: s["slug"] for s in prod_styles}
@@ -196,8 +208,11 @@ def _client(url_var, key_var):
 
 
 def fetch_all(client, table, columns="*"):
-    # shortcut: one page of 10k rows, fine at ~40 spots; paginate if a table grows past that
-    return client.table(table).select(columns).limit(10000).execute().data
+    # shortcut: one page; PostgREST caps it at max_rows (1000 by default). Fine at ~40 spots; paginate past that
+    rows = client.table(table).select(columns).limit(1000).execute().data
+    if len(rows) >= 1000:
+        raise SystemExit(f"{table} has 1000+ rows; fetch_all needs pagination before this script is safe")
+    return rows
 
 
 def lister(client):
@@ -233,7 +248,7 @@ def main(argv=None):
     p_sites = fetch_all(prod, "sites", "est_id, vetting_status, closed_at")
     objects = [o for folder in FOLDERS for o in walk(lister(staging), folder)]
 
-    problems = preflight(s_styles, s_links, s_specs, p_specs, p_sites, objects, src_prefix)
+    problems = preflight(s_styles, s_links, s_specs, p_specs, p_sites, objects, src_prefix, p_styles, p_links)
     if problems:
         raise SystemExit("Preflight failed, nothing written:\n  " + "\n  ".join(problems))
 

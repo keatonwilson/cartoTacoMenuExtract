@@ -76,8 +76,9 @@ def test_live_spots_are_vetted_and_open():
         {"est_id": 1, "vetting_status": "vetted", "closed_at": None},
         {"est_id": 2, "vetting_status": "pending", "closed_at": None},
         {"est_id": 3, "vetting_status": "vetted", "closed_at": "2026-05-01"},
+        {"est_id": 4, "vetting_status": None, "closed_at": None},  # predates the column's default
     ]
-    assert pa.live_est_ids(sites) == {1}
+    assert pa.live_est_ids(sites) == {1, 4}
 
 
 def test_preflight_passes_and_names_each_problem():
@@ -93,7 +94,19 @@ def test_preflight_passes_and_names_each_problem():
         STAGING_SPECS, [], sites, objects, SRC,
     )
     assert len(problems) == 3
-    assert "spot 99" in problems[0] and "Salsa de Arbol" in problems[1] and "gone.jpg" in problems[2]
+    assert "spot 99" in problems[0] and "salsa_spec 7" in problems[1] and "gone.jpg" in problems[2]
+
+
+def test_preflight_catches_schema_drift_and_foreign_hosts():
+    sites = [{"est_id": 6}]
+    elsewhere = {**LINK, "est_id": 6, "style_id": 2, "synced": False, "photo_url": "http://other.supabase.co/storage/v1/object/public/salsas/x.jpg"}
+    problems = pa.preflight(STAGING_STYLES, [elsewhere], STAGING_SPECS, PROD_SPECS, sites, [], SRC,
+                            prod_styles=[{"id": 1}], prod_links=[dict(elsewhere)])
+    assert "salsa_styles: prod has no column" in problems[0] and "other than staging" in problems[-1]
+
+
+def test_specs_match_by_normalized_name():
+    assert pa.resolve_spec_id(7, STAGING_SPECS, [{"id": 4, "name": "  salsa de  ARBOL"}]) == 4
 
 
 def test_expected_counts_merge_prod_links_with_copied_ones():
