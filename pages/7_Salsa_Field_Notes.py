@@ -289,9 +289,12 @@ with tab_sightings:
                     f"Unticked but kept in the atlas, because the link is hand-made or holds field data: {', '.join(stays)}. "
                     "Remove that sighting below to drop it."
                 )
-            if st.button("Save markings", key=f"{key}_save", type="primary"):
+            # Compare with what the widgets showed: a NULL marking shows unticked and stays NULL unless ticked
+            shown = {k: bool(markings.get(k)) for k in edited if k != "total_num"} | {"total_num": markings.get("total_num")}
+            changes = {k: v for k, v in edited.items() if v != shown[k]}
+            if st.button("Save markings", key=f"{key}_save", type="primary", disabled=not changes):
                 try:
-                    sf.save_markings(spot["est_id"], edited)
+                    sf.save_markings(spot["est_id"], changes)
                 except Exception as e:
                     st.error(f"Could not save: {e}")
                 else:

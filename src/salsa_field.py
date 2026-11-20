@@ -405,13 +405,15 @@ def get_markings(est_id: int) -> dict | None:
     return rows[0] if rows else None
 
 
-def save_markings(est_id: int, markings: dict) -> None:
-    """Update only the markings on the spot's salsa row.
+def save_markings(est_id: int, changes: dict) -> None:
+    """Update only the given markings on the spot's salsa row.
 
-    The salsa trigger then adds a synced link for each ticked salsa and drops
-    the synced links of unticked ones, unless they hold field data.
+    Pass just what the curator changed, so an unknown (NULL) marking left alone
+    stays unknown. The salsa trigger then adds a synced link for each ticked
+    salsa and drops the synced links of unticked ones, unless they hold field data.
     """
-    row = {f"{v}_yes": bool(markings[f"{v}_yes"]) for v in VARIETIES} | {"total_num": markings["total_num"]}
+    columns = {f"{v}_yes" for v in VARIETIES} | {"total_num"}
+    row = {k: v for k, v in changes.items() if k in columns}
     get_client().table("salsa").update(row).eq("est_id", est_id).execute()
 
 
