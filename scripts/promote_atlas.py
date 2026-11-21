@@ -13,15 +13,16 @@ has migration 036's seed. This copies staging's curation over it:
   staging id → slug → prod id.
 - Photos under salsas/sightings/ and salsas/styles/ are copied at the same path,
   and photo_url / img_url are rewritten from the staging host to prod's.
-- Not copied: draft styles prod doesn't have (an existing slug is still set to
-  draft), links to draft styles, links on spots that aren't live on prod, and
-  user_favorite_salsas (staging users aren't prod users).
+- Everything else is copied too, drafts and links on pending/closed spots
+  included: staging is reseeded from prod after the cutover, so anything left
+  behind is lost. RLS hides drafts and the app filters pending/closed spots.
+  Not copied: synced links whose spot isn't in prod (preflight aborts on
+  curated ones) and user_favorite_salsas (staging users aren't prod users).
 
 Nothing is deleted on prod. Preflight problems abort before any write.
 """
 import argparse
 import os
-from collections import defaultdict
 
 from dotenv import load_dotenv
 from supabase import create_client
@@ -125,8 +126,6 @@ def plan_styles(staging_styles, prod_styles, staging_specs, prod_specs, src_pref
     prod_by_slug = {s["slug"]: s for s in prod_styles}
     rows, inserts, updates = [], [], {}
     for style in staging_styles:
-        if style["status"] == "draft" and style["slug"] not in prod_by_slug:
-            continue
         row = {k: v for k, v in style.items() if k not in SKIP_COLUMNS}
         row["spec_id"] = resolve_spec_id(style.get("spec_id"), staging_specs, prod_specs)
         row["img_url"] = rewrite_url(style.get("img_url"), src_prefix, dst_prefix)
@@ -141,27 +140,18 @@ def plan_styles(staging_styles, prod_styles, staging_specs, prod_specs, src_pref
     return rows, inserts, updates
 
 
-def skip_reason(link, draft_ids, live):
-    if link["style_id"] in draft_ids:
-        return "draft style"
-    if link["est_id"] not in live:
-        return "spot not live on prod"
-    return None
-
-
-def plan_links(staging_links, staging_styles, prod_ids_by_slug, live, prod_links, src_prefix, dst_prefix):
-    """(rows to upsert, inserts, updates, {reason: count} skipped).
+def plan_links(staging_links, staging_styles, prod_ids_by_slug, prod_est_ids, prod_links, src_prefix, dst_prefix):
+    """(rows to upsert, inserts, updates, number of links skipped because their spot isn't in prod).
 
     A slug missing from prod_ids_by_slug is a style the copy will insert; its
     links count as inserts with style_id None (only possible in a dry run).
     """
     slug_of = {s["id"]: s["slug"] for s in staging_styles}
-    draft = {s["id"] for s in staging_styles if s["status"] == "draft"}
     prod_by_key = {(l["est_id"], l["style_id"]): l for l in prod_links}
-    rows, inserts, updates, skipped = [], [], [], defaultdict(int)
+    rows, inserts, updates, skipped = [], [], [], 0
     for link in staging_links:
-        if reason := skip_reason(link, draft, live):
-            skipped[reason] += 1
+        if link["est_id"] not in prod_est_ids:
+            skipped += 1
             continue
         row = {k: v for k, v in link.items() if k not in SKIP_COLUMNS}
         row["style_id"] = prod_ids_by_slug.get(slug_of[link["style_id"]])
@@ -174,10 +164,10 @@ def plan_links(staging_links, staging_styles, prod_ids_by_slug, live, prod_links
         else:
             continue
         rows.append(row)
-    return rows, inserts, updates, dict(skipped)
+    return rows, inserts, updates, skipped
 
 
-def expected_counts(style_rows, prod_styles, prod_links, staging_styles, staging_links, live):
+def expected_counts(style_rows, prod_styles, prod_links, staging_styles, staging_links, prod_est_ids, live):
     """Per slug after the copy: (status, live spots, synced, hand-made, sightings).
 
     Same columns as the plan's staging_atlas.py report (run against staging), so the two can be compared.
@@ -185,10 +175,9 @@ def expected_counts(style_rows, prod_styles, prod_links, staging_styles, staging
     status = {s["slug"]: s["status"] for s in prod_styles} | {r["slug"]: r["status"] for r in style_rows}
     slug_of_prod = {s["id"]: s["slug"] for s in prod_styles}
     slug_of_staging = {s["id"]: s["slug"] for s in staging_styles}
-    draft = {s["id"] for s in staging_styles if s["status"] == "draft"}
     links = {(l["est_id"], slug_of_prod[l["style_id"]]): l for l in prod_links}
     for l in staging_links:
-        if not skip_reason(l, draft, live):
+        if l["est_id"] in prod_est_ids:
             links[(l["est_id"], slug_of_staging[l["style_id"]])] = l
 
     counts = {slug: [st, set(), 0, 0, 0] for slug, st in status.items()}
@@ -253,17 +242,18 @@ def main(argv=None):
         raise SystemExit("Preflight failed, nothing written:\n  " + "\n  ".join(problems))
 
     live = live_est_ids(p_sites)
+    prod_est_ids = {s["est_id"] for s in p_sites}
     style_rows, inserts, updates = plan_styles(s_styles, p_styles, s_specs, p_specs, src_prefix, dst_prefix)
     prod_ids = {s["slug"]: s["id"] for s in p_styles}
-    _, l_inserts, l_updates, skipped = plan_links(s_links, s_styles, prod_ids, live, p_links, src_prefix, dst_prefix)
+    _, l_inserts, l_updates, skipped = plan_links(s_links, s_styles, prod_ids, prod_est_ids, p_links, src_prefix, dst_prefix)
 
     print(f"Storage: {len(objects)} objects, {sum(size for _, size, _ in objects) / 1e6:.1f} MB to copy")
     print(f"salsa_styles: {len(inserts)} to insert {inserts}, {len(updates)} to update")
     for slug, fields in updates.items():
         print(f"  {slug}: {', '.join(fields)}")
-    print(f"site_salsas: {len(l_inserts)} to insert, {len(l_updates)} to update, skipped {skipped or 'none'}")
+    print(f"site_salsas: {len(l_inserts)} to insert, {len(l_updates)} to update, {skipped} synced links skipped (spot not in prod)")
 
-    counts = expected_counts(style_rows, p_styles, p_links, s_styles, s_links, live)
+    counts = expected_counts(style_rows, p_styles, p_links, s_styles, s_links, prod_est_ids, live)
     print(f"\nExpected prod atlas: {len(counts)} styles, {sum(c[0] == 'published' for c in counts.values())} published")
     print(f"{'slug':<22}{'status':<10}{'spots':>6}{'synced':>7}{'hand':>5}{'sight':>6}")
     for slug, (st, spots, syn, hand, sig) in sorted(counts.items(), key=lambda kv: -kv[1][1]):
@@ -284,7 +274,7 @@ def main(argv=None):
 
     # Re-plan with the prod ids the new styles just got
     prod_ids = {s["slug"]: s["id"] for s in fetch_all(prod, "salsa_styles", "id, slug")}
-    link_rows = plan_links(s_links, s_styles, prod_ids, live, fetch_all(prod, "site_salsas"), src_prefix, dst_prefix)[0]
+    link_rows = plan_links(s_links, s_styles, prod_ids, prod_est_ids, fetch_all(prod, "site_salsas"), src_prefix, dst_prefix)[0]
     if link_rows:
         prod.table("site_salsas").upsert(link_rows, on_conflict="est_id,style_id").execute()
     print(f"Upserted {len(link_rows)} links")

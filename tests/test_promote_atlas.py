@@ -44,10 +44,9 @@ def test_plan_styles_upserts_by_slug_with_prod_spec_id_and_host():
     by_slug = {r["slug"]: r for r in rows}
     assert all("id" not in r and "created_at" not in r for r in rows)
     assert by_slug["arbol"]["spec_id"] == 3 and by_slug["arbol"]["img_url"] == DST + "styles/a.jpg"
-    assert inserts == ["cilantro-crema"]
-    # an unchanged style isn't sent; a style drafted on staging is drafted on prod; a new draft isn't copied
+    # an unchanged style isn't sent; a style drafted on staging is drafted on prod; a new draft is copied as a draft
     assert "verde" not in by_slug and updates == {"arbol": ["img_url"], "mole-negro": ["status"]}
-    assert "nueva" not in by_slug
+    assert inserts == ["cilantro-crema", "nueva"] and by_slug["nueva"]["status"] == "draft"
 
 
 def test_plan_links_maps_style_ids_through_slug_and_skips():
@@ -55,20 +54,22 @@ def test_plan_links_maps_style_ids_through_slug_and_skips():
         {**LINK, "est_id": 6, "style_id": 1, "synced": True},  # already on prod, unchanged
         {**LINK, "est_id": 6, "style_id": 2, "synced": False, "photo_url": SRC + "sightings/6/a.jpg", "observed_at": "2026-10-03"},
         {**LINK, "est_id": 6, "style_id": 3, "synced": False, "observed_at": "2026-10-03"},  # new style
-        {**LINK, "est_id": 6, "style_id": 4, "synced": True},  # draft style
-        {**LINK, "est_id": 8, "style_id": 1, "synced": True},  # closed spot
+        {**LINK, "est_id": 6, "style_id": 4, "synced": True},  # draft style: copied
+        {**LINK, "est_id": 8, "style_id": 1, "synced": True},  # closed spot, still in prod: copied
+        {**LINK, "est_id": 9, "style_id": 1, "synced": True},  # spot not in prod: skipped
     ]
     prod_links = [{**LINK, "est_id": 6, "style_id": 11, "synced": True}, {**LINK, "est_id": 6, "style_id": 12, "synced": True}]
     prod_ids = {"verde": 11, "arbol": 12, "mole-negro": 14}
 
-    rows, inserts, updates, skipped = pa.plan_links(links, STAGING_STYLES, prod_ids, {6}, prod_links, SRC, DST)
+    rows, inserts, updates, skipped = pa.plan_links(links, STAGING_STYLES, prod_ids, {6, 8}, prod_links, SRC, DST)
     assert [r["style_id"] for r in updates] == [12] and updates[0]["photo_url"] == DST + "sightings/6/a.jpg"
     assert updates[0]["synced"] is False
-    assert [r["style_id"] for r in inserts] == [None]  # dry run: cilantro-crema has no prod id yet
-    assert skipped == {"draft style": 1, "spot not live on prod": 1}
+    # dry run: cilantro-crema has no prod id yet
+    assert [(r["est_id"], r["style_id"]) for r in inserts] == [(6, None), (6, 14), (8, 11)]
+    assert skipped == 1
 
-    rows, inserts, _, _ = pa.plan_links(links, STAGING_STYLES, {**prod_ids, "cilantro-crema": 15}, {6}, prod_links, SRC, DST)
-    assert [r["style_id"] for r in inserts] == [15]
+    rows, inserts, _, _ = pa.plan_links(links, STAGING_STYLES, {**prod_ids, "cilantro-crema": 15}, {6, 8}, prod_links, SRC, DST)
+    assert [r["style_id"] for r in inserts] == [15, 14, 11]
 
 
 def test_live_spots_are_vetted_and_open():
@@ -115,12 +116,13 @@ def test_expected_counts_merge_prod_links_with_copied_ones():
     staging_links = [
         {**LINK, "est_id": 6, "style_id": 1, "synced": True, "photo_url": "x"},
         {**LINK, "est_id": 6, "style_id": 3, "synced": False, "observed_at": "2026-10-03"},
+        {**LINK, "est_id": 8, "style_id": 5, "synced": False},  # new draft on a closed spot
     ]
-    counts = pa.expected_counts(style_rows, PROD_STYLES, prod_links, STAGING_STYLES, staging_links, {6, 7})
+    counts = pa.expected_counts(style_rows, PROD_STYLES, prod_links, STAGING_STYLES, staging_links, {6, 7, 8}, {6, 7})
     assert counts["verde"] == ("published", 1, 1, 0, 1)
     assert counts["cilantro-crema"] == ("published", 1, 0, 1, 1)
     assert counts["mole-negro"] == ("draft", 1, 1, 0, 0)
-    assert "nueva" not in counts
+    assert counts["nueva"] == ("draft", 0, 0, 1, 0)  # copied, but a closed spot isn't a live one
 
 
 class FakeDB:
