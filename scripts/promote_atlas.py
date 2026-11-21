@@ -3,8 +3,8 @@
 Atlas curation (styles, links, sighting photos) happened on staging; prod only
 has migration 036's seed. This copies staging's curation over it:
 
-    python3 -m scripts.promote_atlas            # dry run: preflight + report, writes nothing
-    python3 -m scripts.promote_atlas --apply    # copy photos, then styles, then links
+    .venv/bin/python -m scripts.promote_atlas            # dry run: preflight + report, writes nothing
+    .venv/bin/python -m scripts.promote_atlas --apply    # copy photos, then styles, then links
 
 - salsa_styles are upserted by slug, never by id: the id is GENERATED ALWAYS AS
   IDENTITY, so a style new to prod gets a prod id. spec_id is resolved through
