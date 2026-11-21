@@ -32,7 +32,7 @@ An internal admin tool for [CartoTaco](https://github.com/keatonwilson/cartoTaco
 ```bash
 git clone https://github.com/keatonwilson/cartoTacoMenuExtract.git
 cd cartoTacoMenuExtract
-pip install -r requirements.txt
+/opt/homebrew/bin/python3.12 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt   # one-time setup
 cp .env.example .env
 ```
 
@@ -53,7 +53,7 @@ SUPABASE_SERVICE_KEY=eyJ...
 ### Run
 
 ```bash
-python3 -m streamlit run app.py   # prod (default)
+.venv/bin/python -m streamlit run app.py   # prod (default)
 ```
 
 `.env` holds two Supabase projects. `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` are
@@ -66,11 +66,11 @@ touch staging. To run one against staging, swap them in for that run
 ```bash
 SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
 SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
-python3 -m src.similarity --dry-run
+.venv/bin/python -m src.similarity --dry-run
 ```
 
-Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
-is a dead Python 2.7 shim.
+Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
+with no packages, and a bare `pip` is a dead Python 2.7 shim.
 
 ## Production Tables
 
@@ -95,7 +95,7 @@ Reference tables:
 ## Testing
 
 ```bash
-python -m pytest tests/
+.venv/bin/python -m pytest tests/   # pytest once: .venv/bin/python -m pip install pytest
 ```
 
 ## Project Structure

@@ -65,8 +65,8 @@ All main tables keyed by `est_id`. Reference tables keyed by `id`.
 
 ```bash
 cp .env.example .env  # Fill in API keys
-python3 -m pip install -r requirements.txt
-python3 -m streamlit run app.py   # prod (default)
+/opt/homebrew/bin/python3.12 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt   # one-time setup
+.venv/bin/python -m streamlit run app.py   # prod (default)
 ```
 
 `.env` holds two Supabase projects. `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` are
@@ -79,16 +79,16 @@ touch staging. To run one against staging, swap them in for that run
 ```bash
 SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
 SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
-python3 -m src.similarity --dry-run   # the similarity check below, on staging
+.venv/bin/python -m src.similarity --dry-run   # the similarity check below, on staging
 ```
 
 Description similarity (after editing descriptions, or when Data Health lists
 `similarity_stale`). Run it against staging and prod separately:
 
 ```bash
-python3 -m pip install -r requirements-similarity.txt
-python3 -m src.similarity --dry-run   # print each spot's top 3 + the score spread, write nothing
-python3 -m src.similarity             # write
+.venv/bin/python -m pip install -r requirements-similarity.txt
+.venv/bin/python -m src.similarity --dry-run   # print each spot's top 3 + the score spread, write nothing
+.venv/bin/python -m src.similarity             # write
 ```
 
 ## Keeping staging in sync with prod
@@ -104,13 +104,13 @@ Use the sync script for that:
 
 ```bash
 # SUPABASE_URL must be prod here (the .env default), not the staging swap
-python3 -m src.sync_to_staging           # dry run: lists new/changed rows per table
-python3 -m src.sync_to_staging --write   # backs up the atlas, then upserts into staging
-python3 -m src.similarity                # with the staging swap: new spots need scores
+.venv/bin/python -m src.sync_to_staging           # dry run: lists new/changed rows per table
+.venv/bin/python -m src.sync_to_staging --write   # backs up the atlas, then upserts into staging
+.venv/bin/python -m src.similarity                # with the staging swap: new spots need scores
 ```
 
 `fastembed` doesn't install on Python 3.15 yet: its dependencies have no 3.15
-builds. Run similarity from a 3.12 venv (`/opt/homebrew/bin/python3.12 -m venv ...`).
+builds. That's why `.venv` is 3.12.
 
 Then restart the app on staging (see above). The new spot appears in Salsa Field Notes.
 
@@ -143,8 +143,8 @@ When the atlas ships: release migrations 036–042 to prod, then copy
 `est_id`s already match because of the rules above. The sync only runs from prod
 to staging, so this release copy is a separate one-time job.
 
-Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
-is a dead Python 2.7 shim.
+Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
+with no packages, and a bare `pip` is a dead Python 2.7 shim.
 
 ## Before First Run
 
@@ -155,7 +155,7 @@ Create a `spec-images` storage bucket (public) for item_spec images (see `migrat
 ## Testing
 
 ```bash
-python -m pytest tests/
+.venv/bin/python -m pytest tests/   # pytest once: .venv/bin/python -m pip install pytest
 ```
 
 ## Design Decisions
