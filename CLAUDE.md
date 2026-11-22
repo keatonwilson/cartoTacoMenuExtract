@@ -26,6 +26,7 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes, description-similarity preview/recompute
 - `src/similarity.py` — Description similarity for cartoTaco migration 042: embeds every described spot's short + long description (own name and street stripped; combined 0.3/0.7), writes all pairwise cosine scores through `replace_site_similarity()` (atomic, always a full recompute). `description_hash()` mirrors cartoTaco's SQL function of the same name, which the `similarity_stale` health check compares — keep in sync. Optional deps in `requirements-similarity.txt` (`fastembed` local default, `voyageai` with `VOYAGE_API_KEY`)
 - `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES` mirror that migration's CHECK constraints — keep in sync
+- `src/sync_to_staging.py` — Copies prod content rows (sites, hours, descriptions, menu, protein, salsa, the 3 spec tables) into the staging DB by upsert. Never deletes, never touches the atlas tables, backs the atlas up to `backups/` before writing. See "Keeping staging in sync with prod"
 - `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: edit/remove; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
 ## Production Database Schema (Supabase)
@@ -89,6 +90,58 @@ python3 -m pip install -r requirements-similarity.txt
 python3 -m src.similarity --dry-run   # print each spot's top 3 + the score spread, write nothing
 python3 -m src.similarity             # write
 ```
+
+## Keeping staging in sync with prod
+
+Until the Salsa Atlas ships, the two databases have different jobs. **Prod** is
+where spots get added (Upload and Extract → Promote). **Staging** is where atlas
+work happens (Salsa Field Notes), and it holds the only copy of that work:
+`salsa_styles`, `site_salsas`, `user_favorite_salsas`. Prod doesn't have these
+tables until cartoTaco migrations 036–042 are released.
+
+A new spot on prod has to reach staging before you can record sightings for it.
+Use the sync script for that:
+
+```bash
+# SUPABASE_URL must be prod here (the .env default), not the staging swap
+python3 -m src.sync_to_staging           # dry run: lists new/changed rows per table
+python3 -m src.sync_to_staging --write   # backs up the atlas, then upserts into staging
+python3 -m src.similarity                # with the staging swap: new spots need scores
+```
+
+`fastembed` doesn't install on Python 3.15 yet: its dependencies have no 3.15
+builds. Run similarity from a 3.12 venv (`/opt/homebrew/bin/python3.12 -m venv ...`).
+
+Then restart the app on staging (see above). The new spot appears in Salsa Field Notes.
+
+Rules:
+- **Never re-seed staging from `main`.** cartoTaco's `seed-staging.yml` on
+  `main` runs `TRUNCATE ... CASCADE`, and that cascade erases the whole atlas.
+  The safe version (cartoTaco #86) exists only on `staging`, and GitHub runs a
+  `workflow_dispatch` workflow from the default branch. Use the sync script instead.
+- **Create spots and spec entries on prod only.** The sync copies `est_id`s and
+  spec `id`s exactly, so sightings keep pointing at the right spot. Staging's
+  `id` sequences don't advance, though. A spec created directly on staging could
+  later collide with one copied from prod.
+- **Staging-only rows are left alone.** The dry run lists them as "staging-only"
+  (e.g. #37 520 Taco Stop, which was removed from prod). Delete one by hand only
+  if it has no `site_salsas` rows. The FK cascades and would delete its sightings.
+
+Why the sync can't erase the atlas: it only inserts and updates, so no
+`ON DELETE CASCADE` ever fires. The one trigger that deletes from `site_salsas`
+is `sync_site_salsas`, which fires on `salsa` writes. It removes only links it
+created (`synced = true`) that carry no photo, palette, date, heat, house name
+or note, and it recreates the ones the row still implies.
+
+Backups: every `--write` first dumps the three atlas tables to
+`backups/atlas-<timestamp>.json`, which is gitignored, and stops if that fails.
+To restore, upsert `salsa_styles` first, then `site_salsas` and
+`user_favorite_salsas`, keeping their ids.
+
+When the atlas ships: release migrations 036–042 to prod, then copy
+`salsa_styles` and `site_salsas` from staging to prod with their ids. The
+`est_id`s already match because of the rules above. The sync only runs from prod
+to staging, so this release copy is a separate one-time job.
 
 Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
 is a dead Python 2.7 shim.
