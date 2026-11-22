@@ -71,6 +71,8 @@ SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) 
 
 That's rarely needed for similarity: staging gets prod's scores when cartoTaco's
 seed-staging workflow copies prod (content, Salsa Atlas and similarity) into it.
+That workflow is the one way to refresh staging:
+`gh workflow run seed-staging.yml -R keatonwilson/cartoTaco --ref staging`.
 `src.similarity` also needs `.venv/bin/python -m pip install -r requirements-similarity.txt`.
 
 Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
