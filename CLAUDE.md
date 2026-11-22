@@ -15,7 +15,7 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `src/scraping.py` — Web scouting for pending spots: Claude web_search → `ScrapedSpot`; city-wide discovery (`discover_candidates` diffs one search pass against production+staging names); duplicate detection (name + 150 m proximity + staging)
 - `src/staging.py` — Staging table CRUD (`save_scraped_spot` for the web_scrape pipeline)
 - `src/promotion.py` — Staging → production upserts across 6 tables; web_scrape rows take the pending path (sites+descriptions+hours only, `vetting_status='pending'`); menu-photo promotion into a pending est_id flips it to vetted; `list_pending_sites`/`retract_pending_site`/`mark_vetted`
-- `scripts/promote_atlas.py` — One-time staging → prod copy of the curated Salsa Atlas (`.venv/bin/python -m scripts.promote_atlas`, dry run unless `--apply`): sighting/style photos, `salsa_styles` upserted by slug (spec_id resolved by `salsa_spec.name`), `site_salsas` with style ids mapped through slug. Copies drafts and links on pending/closed spots too (staging is reseeded from prod afterwards); skips only synced links whose spot isn't in prod, and favourites
+- `scripts/promote_atlas.py` — One-time staging → prod copy of the curated Salsa Atlas (`.venv/bin/python -m scripts.promote_atlas`, dry run unless `--apply`): sighting/style photos, `salsa_styles` upserted by slug (spec_id resolved by `salsa_spec.name`), `site_salsas` with style ids mapped through slug. Ran once at cutover (2026-11-21). Copied drafts and links on pending/closed spots too (staging was reseeded from prod afterwards); skips only synced links whose spot isn't in prod, and favourites
 - `src/spec_tables.py` — CRUD for `item_spec` and `protein_spec` reference tables; `normalize_spec_name`/`resolve_spec_id` spec name matching (mirrors cartoTaco migration 034's SQL — keep in sync)
 - `src/data_health.py` — wrappers for cartoTaco migration 034: `data_health_report()`, `heal_spec_links()`, `heal_log`
 - `src/description_gen.py` — AI description generation (restaurants + spec entries), web enrichment, Nominatim geocoding
@@ -27,7 +27,7 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes, description-similarity preview/recompute
 - `src/similarity.py` — Description similarity for cartoTaco migration 042: embeds every described spot's short + long description (own name and street stripped; combined 0.3/0.7), writes all pairwise cosine scores through `replace_site_similarity()` (atomic, always a full recompute). `description_hash()` mirrors cartoTaco's SQL function of the same name, which the `similarity_stale` health check compares — keep in sync. Optional deps in `requirements-similarity.txt` (`fastembed` local default, `voyageai` with `VOYAGE_API_KEY`)
 - `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). `get_markings`/`save_markings` read and update only a spot's survey markings. Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES`/`VARIETIES` mirror that migration's CHECK constraints — keep in sync
-- `src/sync_to_staging.py` — Copies prod content rows (sites, hours, descriptions, menu, protein, salsa, the 3 spec tables) into the staging DB by upsert. Never deletes, never touches the atlas tables, backs the atlas up to `backups/` before writing. See "Keeping staging in sync with prod"
+- `src/sync_to_staging.py` — Copies prod content rows (sites, hours, descriptions, menu, protein, salsa, the 3 spec tables) into the staging DB by upsert. Never deletes, never touches the atlas tables, backs the atlas up to `backups/` before writing. Superseded by cartoTaco's seed-staging workflow now that prod owns the atlas; see "Keeping staging in sync with prod"
 - `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: survey markings editor per spot (the 8 `*_yes` booleans + `total_num` on prod's `salsa` row; the sync trigger adds/drops synced links), then edit/remove sightings; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
 ## Production Database Schema (Supabase)
@@ -83,65 +83,57 @@ SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) 
 ```
 
 Description similarity (after editing descriptions, or when Data Health lists
-`similarity_stale`). Run it against staging and prod separately:
+`similarity_stale`). Run it on prod. Staging gets prod's scores from the seed
+below, so running it with the staging swap is rarely needed (only after editing
+descriptions on staging directly). `src.similarity` needs the optional deps in
+`.venv`, which `requirements.txt` doesn't install:
 
 ```bash
-.venv/bin/python -m pip install -r requirements-similarity.txt
+.venv/bin/python -m pip install -r requirements-similarity.txt   # once per .venv
 .venv/bin/python -m src.similarity --dry-run   # print each spot's top 3 + the score spread, write nothing
 .venv/bin/python -m src.similarity             # write
-```
-
-## Keeping staging in sync with prod
-
-Until the Salsa Atlas ships, the two databases have different jobs. **Prod** is
-where spots get added (Upload and Extract → Promote). **Staging** is where atlas
-work happens (Salsa Field Notes), and it holds the only copy of that work:
-`salsa_styles`, `site_salsas`, `user_favorite_salsas`. Prod doesn't have these
-tables until cartoTaco migrations 036–042 are released.
-
-A new spot on prod has to reach staging before you can record sightings for it.
-Use the sync script for that:
-
-```bash
-# SUPABASE_URL must be prod here (the .env default), not the staging swap
-.venv/bin/python -m src.sync_to_staging           # dry run: lists new/changed rows per table
-.venv/bin/python -m src.sync_to_staging --write   # backs up the atlas, then upserts into staging
-.venv/bin/python -m src.similarity                # with the staging swap: new spots need scores
 ```
 
 `fastembed` doesn't install on Python 3.15 yet: its dependencies have no 3.15
 builds. That's why `.venv` is 3.12.
 
-Then restart the app on staging (see above). The new spot appears in Salsa Field Notes.
+## Keeping staging in sync with prod
+
+Prod owns everything: spots get added there (Upload and Extract → Promote), and
+the Salsa Atlas is curated there (Salsa Field Notes). Staging is a copy for
+testing cartoTaco changes.
+
+To refresh staging, run cartoTaco's **Seed Staging from Prod** workflow
+(`seed-staging.yml`) from the `staging` ref:
+
+```bash
+gh workflow run seed-staging.yml -R keatonwilson/cartoTaco --ref staging
+```
+
+In one transaction it replaces staging's content tables, the atlas
+(`salsa_styles`, `site_salsas`) and description similarity with prod's.
+Staging users' salsa favourites are put back by slug. It stops, changing
+nothing, if staging has a style or a curated link (sighting, hand-set detail,
+hand-made link) that prod lacks. Rerun with `discard_staging_atlas` checked to
+drop those. So don't curate on staging: that work is lost at the next seed.
 
 Rules:
-- **Never re-seed staging from `main`.** cartoTaco's `seed-staging.yml` on
-  `main` runs `TRUNCATE ... CASCADE`, and that cascade erases the whole atlas.
-  The safe version (cartoTaco #86) exists only on `staging`, and GitHub runs a
-  `workflow_dispatch` workflow from the default branch. Use the sync script instead.
-- **Create spots and spec entries on prod only.** The sync copies `est_id`s and
-  spec `id`s exactly, so sightings keep pointing at the right spot. Staging's
-  `id` sequences don't advance, though. A spec created directly on staging could
-  later collide with one copied from prod.
-- **Staging-only rows are left alone.** The dry run lists them as "staging-only"
-  (e.g. #37 520 Taco Stop, which was removed from prod). Delete one by hand only
-  if it has no `site_salsas` rows. The FK cascades and would delete its sightings.
+- **Use the `staging` ref until cartoTaco #113 reaches `main`.** The older
+  `seed-staging.yml` on `main` keeps staging's own atlas instead of copying
+  prod's, and doesn't copy similarity.
+- **Create spots and spec entries on prod only.** The seed copies `est_id`s and
+  spec `id`s exactly; staging's `id` sequences don't advance, so a row created
+  directly on staging could collide with one copied from prod.
 
-Why the sync can't erase the atlas: it only inserts and updates, so no
-`ON DELETE CASCADE` ever fires. The one trigger that deletes from `site_salsas`
-is `sync_site_salsas`, which fires on `salsa` writes. It removes only links it
-created (`synced = true`) that carry no photo, palette, date, heat, house name
-or note, and it recreates the ones the row still implies.
+`src/sync_to_staging.py` (copy prod's content rows into staging by upsert,
+without touching the atlas) dates from when staging held the only copy of the
+atlas. The seed now does its job completely. The script only adds spots: it
+leaves staging's atlas and similarity behind prod's, so staging drifts until
+the next seed. It won't trip the seed's guard, since the links staging's sync
+trigger makes are uncurated. Prefer the seed.
 
-Backups: every `--write` first dumps the three atlas tables to
-`backups/atlas-<timestamp>.json`, which is gitignored, and stops if that fails.
-To restore, upsert `salsa_styles` first, then `site_salsas` and
-`user_favorite_salsas`, keeping their ids.
-
-When the atlas ships: release migrations 036–042 to prod, then copy
-`salsa_styles` and `site_salsas` from staging to prod with their ids. The
-`est_id`s already match because of the rules above. The sync only runs from prod
-to staging, so this release copy is a separate one-time job.
+`scripts/promote_atlas.py` was the one-time staging → prod copy at cutover. It
+has run (2026-11-21); don't run it again, since prod is now the source.
 
 Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
 with no packages, and a bare `pip` is a dead Python 2.7 shim.

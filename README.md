@@ -69,6 +69,10 @@ SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) 
 .venv/bin/python -m src.similarity --dry-run
 ```
 
+That's rarely needed for similarity: staging gets prod's scores when cartoTaco's
+seed-staging workflow copies prod (content, Salsa Atlas and similarity) into it.
+`src.similarity` also needs `.venv/bin/python -m pip install -r requirements-similarity.txt`.
+
 Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
 with no packages, and a bare `pip` is a dead Python 2.7 shim.
 
