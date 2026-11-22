@@ -8,7 +8,9 @@ An internal admin tool for [CartoTaco](https://github.com/keatonwilson/cartoTaco
 2. **Staging Review** — Browse, edit, and approve/reject extracted data before it hits production. Includes web enrichment (auto-fills phone, address, hours from the web) and AI description generation.
 3. **Promote** — Push approved extractions into the CartoTaco production database across 6 tables.
 4. **Spec Tables** — Manage `item_spec` and `protein_spec` global reference tables with CRUD UI and AI-generated descriptions.
-5. **Salsa Field Notes** — Turn a photo taken at a spot into a Salsa Atlas sighting: the spot is suggested from the photo's GPS, colours are sampled after white-balancing against a grey card, and new salsa styles are saved as drafts until published. Needs cartoTaco migrations 036–038.
+5. **Salsa Field Notes** — Turn a photo taken at a spot into a Salsa Atlas sighting: the spot is suggested from the photo's GPS, colours are sampled after white-balancing against a grey card, and new salsa styles are saved as drafts until published. Each visit can also correct the spot's survey markings (which of the 8 salsa types it serves, and how many salsas), which add or drop the spot's links in the atlas. Needs cartoTaco migrations 036–039.
+
+   Re-promoting a menu extraction for a spot re-writes those markings from the extraction, undoing the fieldwork. Re-check them on the Sightings tab afterwards.
 
 ## Tech Stack
 
@@ -30,7 +32,7 @@ An internal admin tool for [CartoTaco](https://github.com/keatonwilson/cartoTaco
 ```bash
 git clone https://github.com/keatonwilson/cartoTacoMenuExtract.git
 cd cartoTacoMenuExtract
-pip install -r requirements.txt
+/opt/homebrew/bin/python3.12 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt   # one-time setup
 cp .env.example .env
 ```
 
@@ -51,25 +53,24 @@ SUPABASE_SERVICE_KEY=eyJ...
 ### Run
 
 ```bash
-python3 -m streamlit run app.py   # prod (default)
+.venv/bin/python -m streamlit run app.py   # prod (default)
 ```
 
 `.env` holds two Supabase projects. `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` are
-**prod** (the default, used for menu extraction and promotion). The app ignores
-`SUPABASE_STAGING_URL`/`SUPABASE_STAGING_SERVICE_KEY` unless you swap them in
-for one run. `load_dotenv()` doesn't override variables already set in the shell:
+**prod**, and the app uses them for everything: menu extraction, promotion and
+Salsa Field Notes (the atlas is curated on prod; staging is seeded from it).
+`SUPABASE_STAGING_URL`/`SUPABASE_STAGING_SERVICE_KEY` are for scripts that also
+touch staging. To run one against staging, swap them in for that run
+(`load_dotenv()` doesn't override variables already set in the shell):
 
 ```bash
-# Run against STAGING (Salsa Atlas curation in Salsa Field Notes; prod has no atlas tables until it ships)
 SUPABASE_URL=$(grep ^SUPABASE_STAGING_URL= .env | cut -d= -f2-) \
 SUPABASE_SERVICE_KEY=$(grep ^SUPABASE_STAGING_SERVICE_KEY= .env | cut -d= -f2-) \
-python3 -m streamlit run app.py
+.venv/bin/python -m src.similarity --dry-run
 ```
 
-If Salsa Field Notes loads the catalog without errors, you're on staging.
-
-Use `python3 -m pip` / `python3 -m streamlit`: on this machine a bare `pip`
-is a dead Python 2.7 shim.
+Use `.venv/bin/python` for everything: on this machine `python3` is Homebrew 3.15
+with no packages, and a bare `pip` is a dead Python 2.7 shim.
 
 ## Production Tables
 
@@ -94,7 +95,7 @@ Reference tables:
 ## Testing
 
 ```bash
-python -m pytest tests/
+.venv/bin/python -m pytest tests/   # pytest once: .venv/bin/python -m pip install pytest
 ```
 
 ## Project Structure

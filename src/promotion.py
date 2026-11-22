@@ -172,6 +172,7 @@ def promote(row_id: str, est_id: int | None = None) -> int:
         "other_1_name", "other_1_descrip", "other_2_name", "other_2_descrip",
         "other_3_name", "other_3_descrip",
     }
+    # shortcut: re-promoting overwrites the *_yes/total_num a Field Notes visit corrected; add a suppression flag if it bites
     salsa_row = {"est_id": est_id}
     for key, val in salsa_data.items():
         if key in SALSA_DB_COLUMNS:
