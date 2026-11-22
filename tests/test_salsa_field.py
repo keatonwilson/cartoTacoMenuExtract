@@ -2,11 +2,15 @@
 
 import io
 from datetime import date
+from pathlib import Path
 
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from src import salsa_field as sf
+
+# AppTest resolves a relative path against this file, not the working directory
+PAGE = str(Path(__file__).parents[1] / "pages" / "7_Salsa_Field_Notes.py")
 
 
 def _jpeg(img: Image.Image, exif: Image.Exif | None = None) -> bytes:
@@ -221,7 +225,7 @@ def test_page_renders_with_data(monkeypatch):
     monkeypatch.setattr(sf, "list_sites", lambda: [{"est_id": 6, "name": "Tacos Apson", "lat_1": 32.2, "lon_1": -110.9}])
     monkeypatch.setattr(sf, "list_styles", lambda: [STYLE, {**STYLE, "id": 2, "slug": "nueva", "name": "Nueva", "status": "draft"}])
     monkeypatch.setattr(sf, "list_sightings", lambda: [LINK])
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception, at.exception
     assert len(at.tabs) == 3
 
@@ -233,7 +237,7 @@ def _run_page(monkeypatch, links, styles=None):
     monkeypatch.setattr(sf, "list_sightings", lambda: links)
     monkeypatch.setattr(sf, "save_sighting", lambda est, style, fields: saves.append(fields))
     monkeypatch.setattr(sf, "update_style", lambda style_id, data: saves.append(data))
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception, at.exception
     return at, saves
 
@@ -290,6 +294,6 @@ def test_page_explains_missing_tables(monkeypatch):
 
     monkeypatch.setattr(sf, "list_sites", lambda: [])
     monkeypatch.setattr(sf, "list_styles", boom)
-    at = AppTest.from_file("pages/7_Salsa_Field_Notes.py", default_timeout=30).run()
+    at = AppTest.from_file(PAGE, default_timeout=30).run()
     assert not at.exception
     assert "036" in at.info[0].value
