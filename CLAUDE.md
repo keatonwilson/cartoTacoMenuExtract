@@ -27,7 +27,6 @@ Menu photo extraction toolkit for the CartoTaco project. Upload menu photos, ext
 - `pages/6_Data_Health.py` — Production data health findings (error/warn/info), manual spec-link sweep, recent automatic fixes, description-similarity preview/recompute
 - `src/similarity.py` — Description similarity for cartoTaco migration 042: embeds every described spot's short + long description (own name and street stripped; combined 0.3/0.7), writes all pairwise cosine scores through `replace_site_similarity()` (atomic, always a full recompute). `description_hash()` mirrors cartoTaco's SQL function of the same name, which the `similarity_stale` health check compares — keep in sync. Optional deps in `requirements-similarity.txt` (`fastembed` local default, `voyageai` with `VOYAGE_API_KEY`)
 - `src/salsa_field.py` — Salsa Atlas field notes: EXIF date/GPS → nearest spot, grey-card white balance in linear light, palette extraction, Claude Vision to outline the salsa and the card, and CRUD on cartoTaco's `salsa_styles` / `site_salsas` (migrations 036–038). `get_markings`/`save_markings` read and update only a spot's survey markings. Constants `FAMILIES`/`REGIONS`/`FLAVOUR_AXES`/`VARIETIES` mirror that migration's CHECK constraints — keep in sync
-- `src/sync_to_staging.py` — Copies prod content rows (sites, hours, descriptions, menu, protein, salsa, the 3 spec tables) into the staging DB by upsert. Never deletes, never touches the atlas tables, backs the atlas up to `backups/` before writing. Superseded by cartoTaco's seed-staging workflow now that prod owns the atlas; see "Keeping staging in sync with prod"
 - `pages/7_Salsa_Field_Notes.py` — Three tabs: (1) new sighting: upload a photo → confirm spot, colours, style → save to `site_salsas` (new styles are created as drafts); (2) sightings: survey markings editor per spot (the 8 `*_yes` booleans + `total_num` on prod's `salsa` row; the sync trigger adds/drops synced links), then edit/remove sightings; (3) catalog: edit `salsa_styles`, adopt a palette derived from sightings, upload a photo, publish
 
 ## Production Database Schema (Supabase)
@@ -103,8 +102,8 @@ Prod owns everything: spots get added there (Upload and Extract → Promote), an
 the Salsa Atlas is curated there (Salsa Field Notes). Staging is a copy for
 testing cartoTaco changes.
 
-To refresh staging, run cartoTaco's **Seed Staging from Prod** workflow
-(`seed-staging.yml`) from the `staging` ref:
+The one way to refresh staging is cartoTaco's **Seed Staging from Prod**
+workflow (`seed-staging.yml`), run from the `staging` ref:
 
 ```bash
 gh workflow run seed-staging.yml -R keatonwilson/cartoTaco --ref staging
@@ -124,13 +123,6 @@ Rules:
 - **Create spots and spec entries on prod only.** The seed copies `est_id`s and
   spec `id`s exactly; staging's `id` sequences don't advance, so a row created
   directly on staging could collide with one copied from prod.
-
-`src/sync_to_staging.py` (copy prod's content rows into staging by upsert,
-without touching the atlas) dates from when staging held the only copy of the
-atlas. The seed now does its job completely. The script only adds spots: it
-leaves staging's atlas and similarity behind prod's, so staging drifts until
-the next seed. It won't trip the seed's guard, since the links staging's sync
-trigger makes are uncurated. Prefer the seed.
 
 `scripts/promote_atlas.py` was the one-time staging → prod copy at cutover. It
 has run (2026-11-21); don't run it again, since prod is now the source.
